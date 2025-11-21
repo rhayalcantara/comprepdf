@@ -1,0 +1,197 @@
+<div class="stats-container p-6">
+  <div class="flex justify-between items-center mb-6">
+    <h1 class="text-3xl font-bold">Estadísticas del Sistema</h1>
+    <button mat-raised-button color="primary" (click)="loadAllStats()" [disabled]="loading()">
+      <mat-icon>refresh</mat-icon>
+      Actualizar
+    </button>
+  </div>
+
+  <!-- Loading State -->
+  <div *ngIf="loading()" class="flex justify-center items-center py-12">
+    <mat-spinner></mat-spinner>
+  </div>
+
+  <!-- Error State -->
+  <div *ngIf="error() && !loading()" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6">
+    {{ error() }}
+  </div>
+
+  <!-- Stats Content -->
+  <div *ngIf="!loading() && !error()">
+    <!-- Global Stats Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <mat-card class="stat-card">
+        <mat-card-header>
+          <mat-card-title class="text-lg">Total de Trabajos</mat-card-title>
+        </mat-card-header>
+        <mat-card-content>
+          <div class="text-4xl font-bold text-blue-600">{{ globalStats()?.totalJobs || 0 }}</div>
+          <div class="text-sm text-gray-600 mt-2">
+            {{ globalStats()?.completedJobs || 0 }} completados, {{ globalStats()?.failedJobs || 0 }} fallidos
+          </div>
+        </mat-card-content>
+      </mat-card>
+
+      <mat-card class="stat-card">
+        <mat-card-header>
+          <mat-card-title class="text-lg">Tasa de Éxito</mat-card-title>
+        </mat-card-header>
+        <mat-card-content>
+          <div class="text-4xl font-bold text-green-600">{{ globalStats()?.successRate || 0 }}%</div>
+          <div class="text-sm text-gray-600 mt-2">
+            {{ globalStats()?.pendingJobs || 0 }} pendientes
+          </div>
+        </mat-card-content>
+      </mat-card>
+
+      <mat-card class="stat-card">
+        <mat-card-header>
+          <mat-card-title class="text-lg">Ratio Promedio</mat-card-title>
+        </mat-card-header>
+        <mat-card-content>
+          <div class="text-4xl font-bold text-purple-600">{{ globalStats()?.avgCompressionRatio || 0 }}%</div>
+          <div class="text-sm text-gray-600 mt-2">
+            de compresión
+          </div>
+        </mat-card-content>
+      </mat-card>
+
+      <mat-card class="stat-card">
+        <mat-card-header>
+          <mat-card-title class="text-lg">Espacio Ahorrado</mat-card-title>
+        </mat-card-header>
+        <mat-card-content>
+          <div class="text-4xl font-bold text-orange-600">
+            {{ formatBytes(globalStats()?.totalSpaceSaved || 0) }}
+          </div>
+          <div class="text-sm text-gray-600 mt-2">
+            en {{ globalStats()?.totalCompressions || 0 }} compresiones
+          </div>
+        </mat-card-content>
+      </mat-card>
+    </div>
+
+    <!-- Daily Stats -->
+    <mat-card class="mb-6">
+      <mat-card-header>
+        <mat-card-title>Estadísticas Diarias (Últimos 7 días)</mat-card-title>
+      </mat-card-header>
+      <mat-card-content>
+        <div *ngIf="dailyStats().length === 0" class="text-gray-500 text-center py-4">
+          No hay datos disponibles
+        </div>
+        <div *ngIf="dailyStats().length > 0" class="overflow-x-auto">
+          <table class="w-full">
+            <thead>
+              <tr class="border-b">
+                <th class="text-left py-2 px-4">Fecha</th>
+                <th class="text-right py-2 px-4">Compresiones</th>
+                <th class="text-right py-2 px-4">Ratio Promedio</th>
+                <th class="text-right py-2 px-4">Tiempo Promedio</th>
+                <th class="text-right py-2 px-4">Espacio Ahorrado</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let stat of dailyStats()" class="border-b hover:bg-gray-50">
+                <td class="py-2 px-4">{{ stat.date }}</td>
+                <td class="text-right py-2 px-4">{{ stat.compressions }}</td>
+                <td class="text-right py-2 px-4">{{ stat.avgCompressionRatio }}%</td>
+                <td class="text-right py-2 px-4">{{ stat.avgProcessingTimeMs }}ms</td>
+                <td class="text-right py-2 px-4">{{ formatBytes(stat.spaceSaved) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </mat-card-content>
+    </mat-card>
+
+    <!-- Compression Level Stats -->
+    <mat-card class="mb-6">
+      <mat-card-header>
+        <mat-card-title>Distribución por Nivel de Compresión</mat-card-title>
+      </mat-card-header>
+      <mat-card-content>
+        <div *ngIf="levelStats().length === 0" class="text-gray-500 text-center py-4">
+          No hay datos disponibles
+        </div>
+        <div *ngIf="levelStats().length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div *ngFor="let stat of levelStats()" class="bg-gray-50 rounded p-4">
+            <div class="text-lg font-semibold">{{ getLevelLabel(stat.level) }}</div>
+            <div class="text-3xl font-bold text-blue-600 mt-2">{{ stat.count }}</div>
+            <div class="text-sm text-gray-600">trabajos</div>
+          </div>
+        </div>
+      </mat-card-content>
+    </mat-card>
+
+    <!-- Recent Jobs -->
+    <mat-card>
+      <mat-card-header>
+        <mat-card-title>Trabajos Recientes</mat-card-title>
+      </mat-card-header>
+      <mat-card-content>
+        <div *ngIf="recentJobs().length === 0" class="text-gray-500 text-center py-4">
+          No hay trabajos recientes
+        </div>
+        <div *ngIf="recentJobs().length > 0" class="overflow-x-auto">
+          <table mat-table [dataSource]="recentJobs()" class="w-full">
+            <!-- Filename Column -->
+            <ng-container matColumnDef="filename">
+              <th mat-header-cell *matHeaderCellDef>Archivo</th>
+              <td mat-cell *matCellDef="let job">
+                <div class="font-medium">{{ job.originalFilename || 'N/A' }}</div>
+                <div class="text-xs text-gray-500">{{ job.jobId.substring(0, 8) }}...</div>
+              </td>
+            </ng-container>
+
+            <!-- Status Column -->
+            <ng-container matColumnDef="status">
+              <th mat-header-cell *matHeaderCellDef>Estado</th>
+              <td mat-cell *matCellDef="let job">
+                <div class="flex items-center" [ngClass]="getStatusColor(job.status)">
+                  <mat-icon class="mr-1 text-sm">{{ getStatusIcon(job.status) }}</mat-icon>
+                  {{ job.status }}
+                </div>
+              </td>
+            </ng-container>
+
+            <!-- Level Column -->
+            <ng-container matColumnDef="level">
+              <th mat-header-cell *matHeaderCellDef>Nivel</th>
+              <td mat-cell *matCellDef="let job">{{ getLevelLabel(job.compressionLevel) }}</td>
+            </ng-container>
+
+            <!-- Ratio Column -->
+            <ng-container matColumnDef="ratio">
+              <th mat-header-cell *matHeaderCellDef>Compresión</th>
+              <td mat-cell *matCellDef="let job">
+                <div *ngIf="job.compressionRatio !== null" class="font-medium">
+                  {{ job.compressionRatio }}%
+                </div>
+                <div *ngIf="job.originalSize && job.compressedSize" class="text-xs text-gray-500">
+                  {{ formatBytes(job.originalSize) }} → {{ formatBytes(job.compressedSize) }}
+                </div>
+                <div *ngIf="job.compressionRatio === null" class="text-gray-400">-</div>
+              </td>
+            </ng-container>
+
+            <!-- Date Column -->
+            <ng-container matColumnDef="date">
+              <th mat-header-cell *matHeaderCellDef>Fecha</th>
+              <td mat-cell *matCellDef="let job">
+                <div>{{ job.createdAt | date:'short' }}</div>
+                <div *ngIf="job.completedAt" class="text-xs text-gray-500">
+                  Completado: {{ job.completedAt | date:'short' }}
+                </div>
+              </td>
+            </ng-container>
+
+            <tr mat-header-row *matHeaderRowDef="recentJobsColumns"></tr>
+            <tr mat-row *matRowDef="let row; columns: recentJobsColumns;" class="hover:bg-gray-50"></tr>
+          </table>
+        </div>
+      </mat-card-content>
+    </mat-card>
+  </div>
+</div>

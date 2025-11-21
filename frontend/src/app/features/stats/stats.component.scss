@@ -1,0 +1,36 @@
+.stats-container {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.stat-card {
+  mat-card-header {
+    margin-bottom: 1rem;
+  }
+
+  mat-card-content {
+    padding-top: 0;
+  }
+}
+
+mat-card {
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+}
+
+table {
+  border-collapse: collapse;
+
+  th {
+    font-weight: 600;
+    color: #374151;
+  }
+
+  td, th {
+    padding: 0.75rem 1rem;
+  }
+
+  tbody tr {
+    transition: background-color 0.2s;
+  }
+}

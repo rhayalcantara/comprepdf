@@ -1,0 +1,11 @@
+fastapi==0.104.1
+uvicorn==0.24.0
+celery==5.3.4
+redis==5.0.1
+mysql-connector-python==8.2.0
+pikepdf==8.7.1
+Pillow==10.1.0
+python-magic-bin==0.4.14
+pydantic==2.5.2
+python-multipart==0.0.6
+python-dotenv==1.0.0
