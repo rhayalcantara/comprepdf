@@ -8,7 +8,7 @@ import {
   splitPdf, mergePdfs, signPdf, extractPages,
   rotatePages, protectPdf, unlockPdf,
 } from '../controllers/pdf-operation.controller';
-import { getGlobalStats, getDailyStats, getRecentJobs, getCompressionLevelStats } from '../controllers/stats.controller';
+import { getOverview, getDailyStats, getRecentJobs, getOperationStats, getCompressionLevelStats } from '../controllers/stats.controller';
 import { issueCertificate, listCertificates } from '../controllers/certificate.controller';
 import { listUsers, createUser, updateUser } from '../controllers/user.controller';
 import { upload, uploadMultiple, uploadSign, enforceSignatureSizeLimit } from '../middlewares/upload.middleware';
@@ -109,10 +109,12 @@ router.get('/jobs/:jobId', getJobStatus);
 router.get('/jobs/:jobId/download', downloadFile);
 router.delete('/jobs/:jobId', deleteJob);
 
-// Statistics routes (user: sus cifras · admin: globales)
-router.get('/stats', getGlobalStats);
+// Statistics routes (user: sus cifras · admin: globales + bloques users/health)
+router.get('/stats', getOverview);            // alias de compatibilidad
+router.get('/stats/overview', getOverview);
 router.get('/stats/daily', getDailyStats);
 router.get('/stats/recent', getRecentJobs);
-router.get('/stats/levels', getCompressionLevelStats);
+router.get('/stats/operations', getOperationStats);
+router.get('/stats/levels', getCompressionLevelStats);  // alias hasta Fase 2
 
 export default router;
