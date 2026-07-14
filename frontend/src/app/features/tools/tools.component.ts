@@ -21,6 +21,7 @@ import {
   rangesToSpec,
 } from '../../shared/pdf-preview/page-ranges';
 import { SignPlacementComponent, SignaturePlacement } from './sign-placement.component';
+import { MergeBuilderComponent, MergeEntry } from './merge-builder.component';
 
 type SingleFileField = 'splitFile' | 'extractFile' | 'rotateFile' | 'protectFile' | 'unlockFile' | 'signFile' | 'signCert';
 
@@ -92,6 +93,7 @@ function trimCanvas(source: HTMLCanvasElement): HTMLCanvasElement | null {
     PdfPageGridComponent,
     PdfThumbComponent,
     SignPlacementComponent,
+    MergeBuilderComponent,
   ],
   templateUrl: './tools.component.html',
   styleUrl: './tools.component.scss',
@@ -140,8 +142,8 @@ export class ToolsComponent implements OnDestroy {
     }
   });
 
-  // Merge
-  mergeFiles: File[] = [];
+  // Merge — el orden y las páginas por archivo los gestiona MergeBuilderComponent
+  mergeEntries: MergeEntry[] = [];
 
   // Extract
   extractFile: File | null = null;
@@ -221,6 +223,7 @@ export class ToolsComponent implements OnDestroy {
       this.currentJob.set(null);
       this.isProcessing.set(false);
       this.outputName = '';
+      this.mergeEntries = [];
       // Estado de firma: al cambiar de herramienta se vuelve al modo por defecto
       // y se descartan credenciales y dibujo (datos sensibles).
       this.signMode.set('certificate');
@@ -318,16 +321,8 @@ export class ToolsComponent implements OnDestroy {
     input.value = '';
   }
 
-  onMergeFiles(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    if (input.files) {
-      this.mergeFiles = [...this.mergeFiles, ...Array.from(input.files)];
-      input.value = '';
-    }
-  }
-
-  removeMergeFile(index: number): void {
-    this.mergeFiles = this.mergeFiles.filter((_, i) => i !== index);
+  onMergeEntries(entries: MergeEntry[]): void {
+    this.mergeEntries = entries;
   }
 
   // --- Drag & drop sobre la zona principal ---
@@ -349,11 +344,8 @@ export class ToolsComponent implements OnDestroy {
     if (!files.length) {
       return this.warn('Solo se permiten archivos PDF');
     }
-    if (this.toolId() === 'merge') {
-      this.mergeFiles = [...this.mergeFiles, ...files];
-    } else {
-      this.setMainFile(files[0]);
-    }
+    // Merge gestiona su propio drag & drop dentro de MergeBuilderComponent.
+    this.setMainFile(files[0]);
   }
 
   // --- Split: edición de rangos ---
@@ -628,8 +620,27 @@ export class ToolsComponent implements OnDestroy {
   }
 
   private runMerge(): void {
-    if (this.mergeFiles.length < 2) return this.warn('Selecciona al menos 2 PDFs');
-    this.run(this.api.mergePdfs(this.mergeFiles, this.outName()));
+    const entries = this.mergeEntries;
+    if (entries.length < 2) return this.warn('Selecciona al menos 2 PDFs');
+
+    const ranges: string[] = [];
+    for (const e of entries) {
+      const spec = e.pages.trim();
+      // Sin vista previa (protegido/error) o campo vacío ⇒ documento completo.
+      if (!spec || !e.ready) {
+        ranges.push('all');
+        continue;
+      }
+      const pages = parsePageSpec(spec, e.pageCount);
+      if (!pages.length) {
+        return this.warn(`Revisa las páginas de "${e.file.name}" (1–${e.pageCount})`);
+      }
+      ranges.push(formatPageSpec(pages));
+    }
+
+    const files = entries.map((e) => e.file);
+    const allComplete = ranges.every((r) => r === 'all');
+    this.run(this.api.mergePdfs(files, this.outName(), allComplete ? undefined : ranges));
   }
 
   private runExtract(): void {

@@ -463,29 +463,8 @@
             </div>
           }
         } @else {
-          <!-- Merge: acepta varios archivos y muestra el orden -->
-          <label class="dropzone" [class.dragging]="isDragging()"
-                 (dragover)="onDragOver($event)" (dragleave)="onDragLeave($event)" (drop)="onDrop($event)">
-            <span class="material-icons">upload_file</span>
-            <p class="mt-2 mb-1 font-medium">Arrastra tus PDFs aquí o haz clic para seleccionar</p>
-            <p class="text-sm text-ink-soft m-0">Se unirán en el orden mostrado</p>
-            <input type="file" accept=".pdf" multiple hidden (change)="onMergeFiles($event)">
-          </label>
-          @if (mergeFiles.length) {
-            <ul class="merge-list mt-4">
-              @for (f of mergeFiles; track $index) {
-                <li class="file-row mt-2">
-                  <span class="order mono">{{ $index + 1 }}</span>
-                  <span class="material-icons">description</span>
-                  <span class="flex-1 truncate">{{ f.name }}</span>
-                  <span class="size">{{ formatSize(f.size) }}</span>
-                  <button type="button" class="icon-btn" (click)="removeMergeFile($index)" aria-label="Quitar archivo">
-                    <span class="material-icons">close</span>
-                  </button>
-                </li>
-              }
-            </ul>
-          }
+          <!-- Merge: miniaturas, reordenamiento y páginas por archivo -->
+          <app-merge-builder (entriesChange)="onMergeEntries($event)" />
         }
 
         <!-- Opciones específicas por herramienta (solo las que no usan el layout ancho) -->

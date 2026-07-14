@@ -46,26 +46,6 @@
   }
 }
 
-.merge-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-
-  .order {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    border-radius: 6px;
-    background: var(--cobalt-soft);
-    color: var(--cobalt);
-    font-size: 0.8rem;
-    font-weight: 500;
-    flex-shrink: 0;
-  }
-}
-
 .hint {
   display: flex;
   align-items: flex-start;

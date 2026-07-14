@@ -12,8 +12,6 @@ import {
   JobResponse,
 } from '../../core/services/api.service';
 
-const ADMIN_KEY_STORAGE = 'cert_admin_key';
-
 @Component({
   selector: 'app-certificates',
   standalone: true,
@@ -36,27 +34,7 @@ const ADMIN_KEY_STORAGE = 'cert_admin_key';
         </div>
       </header>
 
-      <!-- Clave de administrador -->
-      @if (!adminKey()) {
-        <div class="sheet p-6 md:p-8">
-          <p class="field-label mb-1">Clave de administrador</p>
-          <p class="text-sm text-ink-soft mt-0 mb-3">
-            Este módulo está restringido. Introduce la clave de administrador (CERT_ADMIN_KEY) para continuar.
-          </p>
-          <div class="flex gap-2">
-            <input class="input flex-1" type="password" [(ngModel)]="keyInput"
-                   placeholder="Clave de administrador" (keyup.enter)="saveKey()">
-            <button class="btn-cta" [disabled]="!keyInput.trim()" (click)="saveKey()">Continuar</button>
-          </div>
-        </div>
-      } @else {
-        <div class="flex items-center gap-2 text-sm text-ink-soft mb-4">
-          <span class="material-icons" style="font-size:18px;color:#0f7b4a">lock</span>
-          <span>Sesión de administrador activa.</span>
-          <button class="link-btn" (click)="forgetKey()">Cambiar clave</button>
-        </div>
-
-        <!-- Formulario de emisión -->
+      <!-- Formulario de emisión (acceso restringido a admin por el guard) -->
         <div class="sheet p-6 md:p-8">
           <h2 class="font-display text-lg font-bold m-0 mb-4">Emitir certificado</h2>
 
@@ -178,7 +156,6 @@ const ADMIN_KEY_STORAGE = 'cert_admin_key';
             </div>
           }
         </div>
-      }
     </div>
   `,
   styles: [`
@@ -205,9 +182,6 @@ const ADMIN_KEY_STORAGE = 'cert_admin_key';
   `]
 })
 export class CertificatesComponent implements OnInit {
-  adminKey = signal<string | null>(null);
-  keyInput = '';
-
   form: IssueCertificatePayload = {
     nombre: '',
     cedula: '',
@@ -224,27 +198,7 @@ export class CertificatesComponent implements OnInit {
   constructor(private api: ApiService, private snackBar: MatSnackBar) {}
 
   ngOnInit(): void {
-    const stored = sessionStorage.getItem(ADMIN_KEY_STORAGE);
-    if (stored) {
-      this.adminKey.set(stored);
-      this.loadList();
-    }
-  }
-
-  saveKey(): void {
-    const key = this.keyInput.trim();
-    if (!key) return;
-    sessionStorage.setItem(ADMIN_KEY_STORAGE, key);
-    this.adminKey.set(key);
-    this.keyInput = '';
     this.loadList();
-  }
-
-  forgetKey(): void {
-    sessionStorage.removeItem(ADMIN_KEY_STORAGE);
-    this.adminKey.set(null);
-    this.certificates.set([]);
-    this.currentJob.set(null);
   }
 
   canSubmit(): boolean {
@@ -253,8 +207,7 @@ export class CertificatesComponent implements OnInit {
   }
 
   issue(): void {
-    const key = this.adminKey();
-    if (!key || !this.canSubmit()) return;
+    if (!this.canSubmit()) return;
 
     // Solo enviar campos con valor (el backend exige cédula O correo).
     const payload: IssueCertificatePayload = {
@@ -269,7 +222,7 @@ export class CertificatesComponent implements OnInit {
     this.isProcessing.set(true);
     this.currentJob.set(null);
 
-    this.api.issueCertificate(payload, key).subscribe({
+    this.api.issueCertificate(payload).subscribe({
       next: (res) => {
         if (res.success && res.data) {
           this.currentJob.set(res.data);
@@ -328,9 +281,7 @@ export class CertificatesComponent implements OnInit {
   }
 
   loadList(): void {
-    const key = this.adminKey();
-    if (!key) return;
-    this.api.listCertificates(key).subscribe({
+    this.api.listCertificates().subscribe({
       next: (res) => {
         if (res.success && res.data) this.certificates.set(res.data);
       },
@@ -348,9 +299,8 @@ export class CertificatesComponent implements OnInit {
 
   private handleError(err: unknown, fallback: string): void {
     const status = (err as { status?: number })?.status;
-    if (status === 401 || status === 503) {
-      this.snackBar.open('Clave de administrador inválida o módulo no configurado.', 'Cerrar', { duration: 4000 });
-      this.forgetKey();
+    if (status === 503) {
+      this.snackBar.open('El módulo de certificados no está configurado en el servidor.', 'Cerrar', { duration: 4000 });
     } else {
       this.snackBar.open(fallback, 'Cerrar', { duration: 3000 });
     }

@@ -1,7 +1,8 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
+import { SafeUser } from './auth.service';
 
 export interface CompressionJob {
   jobId: string;
@@ -122,6 +123,62 @@ export interface CertificateRecord {
   createdAt: string;
 }
 
+// --- "Mis trabajos" (historial paginado) ---
+
+/** Resumen de un job para el listado. `username` solo llega en modo admin (?all=true). */
+export interface JobSummary {
+  jobId: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  operationType: string;
+  compressionLevel: string | null;
+  originalFilename: string | null;
+  originalSize: number | null;
+  outputFilename: string | null;
+  outputSize: number | null;
+  downloadUrl: string | null;
+  createdAt: string;
+  completedAt: string | null;
+  expiresAt: string | null;
+  /** Solo presente cuando el admin lista con ?all=true (huérfano → null). */
+  username?: string | null;
+}
+
+export interface Pagination {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface JobsPage {
+  items: JobSummary[];
+  pagination: Pagination;
+}
+
+// --- Gestión de usuarios (solo admin) ---
+
+export interface CreateUserPayload {
+  username: string;
+  nombre: string;
+  rol?: 'admin' | 'user';
+  email?: string;
+  password?: string;
+}
+
+export interface CreateUserResult {
+  user: SafeUser;
+  /** Solo viene si no se envió password: mostrar UNA vez. */
+  temporaryPassword?: string;
+}
+
+export interface UpdateUserPayload {
+  rol?: 'admin' | 'user';
+  estado?: 'activo' | 'inactivo';
+  nombre?: string;
+  email?: string;
+  newPassword?: string;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -130,28 +187,21 @@ export class ApiService {
 
   constructor(private http: HttpClient) {}
 
-  // --- Certificados (protegidos con clave de administrador, solo TI) ---
-
-  /** Header de autorización del módulo de certificados. */
-  private adminHeaders(adminKey: string): HttpHeaders {
-    return new HttpHeaders({ 'X-Admin-Key': adminKey });
-  }
+  // --- Certificados (solo admin; el token JWT lo adjunta el interceptor) ---
 
   /** Emite un certificado personal. Crea un job; el .pfx se descarga por /jobs. */
-  issueCertificate(payload: IssueCertificatePayload, adminKey: string): Observable<ApiResponse<JobResponse>> {
+  issueCertificate(payload: IssueCertificatePayload): Observable<ApiResponse<JobResponse>> {
     return this.http.post<ApiResponse<JobResponse>>(
       `${this.baseUrl}/certificates`,
       payload,
-      { headers: this.adminHeaders(adminKey) },
     );
   }
 
   /** Lista los certificados emitidos (opcionalmente filtrando por estado). */
-  listCertificates(adminKey: string, estado?: 'activo' | 'revocado'): Observable<ApiResponse<CertificateRecord[]>> {
+  listCertificates(estado?: 'activo' | 'revocado'): Observable<ApiResponse<CertificateRecord[]>> {
     const query = estado ? `?estado=${estado}` : '';
     return this.http.get<ApiResponse<CertificateRecord[]>>(
       `${this.baseUrl}/certificates${query}`,
-      { headers: this.adminHeaders(adminKey) },
     );
   }
 
@@ -182,9 +232,17 @@ export class ApiService {
     return this.http.post<ApiResponse<JobResponse>>(`${this.baseUrl}/pdf/split`, formData);
   }
 
-  mergePdfs(files: File[], outputName?: string): Observable<ApiResponse<JobResponse>> {
+  /**
+   * Une varios PDFs en el orden dado. `pageRanges` es opcional y, si se pasa,
+   * debe ser paralelo a `files`: cada entrada "all" o una lista tipo "1-3,5"
+   * con las páginas de ese PDF a incluir.
+   */
+  mergePdfs(files: File[], outputName?: string, pageRanges?: string[]): Observable<ApiResponse<JobResponse>> {
     const formData = new FormData();
     files.forEach((f) => formData.append('files', f));
+    if (pageRanges && pageRanges.length) {
+      formData.append('pageRanges', JSON.stringify(pageRanges));
+    }
     this.appendOutputName(formData, outputName);
     return this.http.post<ApiResponse<JobResponse>>(`${this.baseUrl}/pdf/merge`, formData);
   }
@@ -284,5 +342,31 @@ export class ApiService {
 
   getCompressionLevelStats(): Observable<ApiResponse<CompressionLevelStat[]>> {
     return this.http.get<ApiResponse<CompressionLevelStat[]>>(`${this.baseUrl}/stats/levels`);
+  }
+
+  // --- Mis trabajos ---
+
+  /**
+   * Historial paginado. El usuario ve los suyos; el admin con `all=true` ve todos
+   * (con `username` por item). El token lo adjunta el interceptor.
+   */
+  listJobs(page = 1, limit = 20, all = false): Observable<ApiResponse<JobsPage>> {
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (all) params.set('all', 'true');
+    return this.http.get<ApiResponse<JobsPage>>(`${this.baseUrl}/jobs?${params.toString()}`);
+  }
+
+  // --- Gestión de usuarios (solo admin) ---
+
+  getUsers(): Observable<ApiResponse<{ users: SafeUser[] }>> {
+    return this.http.get<ApiResponse<{ users: SafeUser[] }>>(`${this.baseUrl}/users`);
+  }
+
+  createUser(payload: CreateUserPayload): Observable<ApiResponse<CreateUserResult>> {
+    return this.http.post<ApiResponse<CreateUserResult>>(`${this.baseUrl}/users`, payload);
+  }
+
+  updateUser(id: string, payload: UpdateUserPayload): Observable<ApiResponse<{ user: SafeUser }>> {
+    return this.http.patch<ApiResponse<{ user: SafeUser }>>(`${this.baseUrl}/users/${id}`, payload);
   }
 }
