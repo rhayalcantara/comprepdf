@@ -175,6 +175,15 @@ export const updateUser = async (
       );
     }
 
+    // Unicidad de correo: evita un 500 por la restricción UNIQUE al editar el
+    // email a uno ya usado por otro usuario (la columna es case-insensitive).
+    if (email !== undefined && email.trim()) {
+      const existingEmail = await UserModel.findByEmail(email.trim());
+      if (existingEmail && existingEmail.id !== id) {
+        throw new ValidationError('El correo ya está registrado');
+      }
+    }
+
     const changes: Parameters<typeof UserModel.update>[1] = {};
     if (rol !== undefined) {
       changes.rol = rol as UserRole;

@@ -271,6 +271,64 @@ describe('user.controller', () => {
       expect(nextError()).toBeInstanceOf(ValidationError);
     });
 
+    it('edita nombre y correo de otro usuario -> update con {nombre, email}', async () => {
+      jest.spyOn(UserModel, 'findByEmail').mockResolvedValue(null);
+      const updateSpy = jest
+        .spyOn(UserModel, 'update')
+        .mockResolvedValue(
+          fakeUser({ id: 'user-2', nombre: 'Nuevo Nombre', email: 'nuevo@coopaspire.com.do' }),
+        );
+
+      const req = {
+        params: { id: 'user-2' },
+        user: { id: 'admin-9', rol: 'admin' },
+        body: { nombre: 'Nuevo Nombre', email: 'nuevo@coopaspire.com.do' },
+      } as unknown as Request;
+      await updateUser(req, mockResponse as Response, mockNext);
+
+      expect(nextError()).toBeUndefined();
+      expect(updateSpy).toHaveBeenCalledWith('user-2', {
+        nombre: 'Nuevo Nombre',
+        email: 'nuevo@coopaspire.com.do',
+      });
+    });
+
+    it('rechaza editar a un correo ya usado por OTRO usuario -> 400 y no actualiza', async () => {
+      jest
+        .spyOn(UserModel, 'findByEmail')
+        .mockResolvedValue(fakeUser({ id: 'otro-7', email: 'taken@coopaspire.com.do' }));
+      const updateSpy = jest.spyOn(UserModel, 'update');
+
+      const req = {
+        params: { id: 'user-2' },
+        user: { id: 'admin-9', rol: 'admin' },
+        body: { email: 'taken@coopaspire.com.do' },
+      } as unknown as Request;
+      await updateUser(req, mockResponse as Response, mockNext);
+
+      expect(nextError()).toBeInstanceOf(ValidationError);
+      expect(updateSpy).not.toHaveBeenCalled();
+    });
+
+    it('conservar el mismo correo (mismo id) no es conflicto', async () => {
+      jest
+        .spyOn(UserModel, 'findByEmail')
+        .mockResolvedValue(fakeUser({ id: 'user-2', email: 'mismo@coopaspire.com.do' }));
+      const updateSpy = jest
+        .spyOn(UserModel, 'update')
+        .mockResolvedValue(fakeUser({ id: 'user-2', email: 'mismo@coopaspire.com.do' }));
+
+      const req = {
+        params: { id: 'user-2' },
+        user: { id: 'admin-9', rol: 'admin' },
+        body: { email: 'mismo@coopaspire.com.do', nombre: 'X' },
+      } as unknown as Request;
+      await updateUser(req, mockResponse as Response, mockNext);
+
+      expect(nextError()).toBeUndefined();
+      expect(updateSpy).toHaveBeenCalled();
+    });
+
     it('sin campos a actualizar -> 400', async () => {
       const req = {
         params: { id: 'user-2' },

@@ -2,7 +2,7 @@ import { Component, OnInit, computed, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
-import { ApiService, CreateUserPayload } from '../../core/services/api.service';
+import { ApiService, CreateUserPayload, UpdateUserPayload } from '../../core/services/api.service';
 import { AuthService, SafeUser } from '../../core/services/auth.service';
 
 @Component({
@@ -143,6 +143,9 @@ import { AuthService, SafeUser } from '../../core/services/auth.service';
                           Activar
                         </button>
                       }
+                      <button class="link-btn" [disabled]="busy()" (click)="openEdit(u)">
+                        Editar
+                      </button>
                       <button class="link-btn" [disabled]="busy()" (click)="resetPassword(u)">
                         Resetear contraseña
                       </button>
@@ -154,6 +157,40 @@ import { AuthService, SafeUser } from '../../core/services/auth.service';
           </div>
         }
       </div>
+
+      <!-- Modal: editar usuario -->
+      @if (editingUser(); as eu) {
+        <div class="modal-backdrop" (click)="closeEdit()">
+          <div class="modal-card sheet p-6 md:p-8" (click)="$event.stopPropagation()">
+            <div class="flex items-center justify-between mb-4">
+              <h2 class="font-display text-lg font-bold m-0">Editar {{ eu.username }}</h2>
+              <button class="icon-btn" (click)="closeEdit()" aria-label="Cerrar">
+                <span class="material-icons">close</span>
+              </button>
+            </div>
+            <div class="grid grid-cols-1 gap-4">
+              <label class="field">
+                <span class="field-label">Nombre *</span>
+                <input class="input" [(ngModel)]="editModel.nombre" maxlength="255">
+              </label>
+              <label class="field">
+                <span class="field-label">Correo</span>
+                <input class="input" type="email" [(ngModel)]="editModel.email" maxlength="255"
+                       placeholder="Dejar en blanco para quitar el correo">
+              </label>
+            </div>
+            <p class="text-sm text-ink-soft mt-3 m-0">
+              El nombre de usuario no se puede cambiar. Para rol, estado o contraseña usa las acciones de la tabla.
+            </p>
+            <div class="flex justify-end gap-2 mt-5">
+              <button class="btn-secondary" [disabled]="busy()" (click)="closeEdit()">Cancelar</button>
+              <button class="btn-cta" [disabled]="!canSaveEdit() || busy()" (click)="saveEdit()">
+                @if (busy()) { Guardando… } @else { Guardar cambios }
+              </button>
+            </div>
+          </div>
+        </div>
+      }
     </div>
   `,
   styles: [`
@@ -184,6 +221,8 @@ import { AuthService, SafeUser } from '../../core/services/auth.service';
     .link-btn { background:none; border:none; color:var(--cobalt); font-weight:500; font-size:0.88rem; cursor:pointer; padding:0 0.4rem; font-family:inherit; }
     .link-btn:hover:not(:disabled) { text-decoration:underline; }
     .link-btn:disabled { color:var(--ink-soft); opacity:0.5; cursor:not-allowed; }
+    .modal-backdrop { position:fixed; inset:0; background:rgba(15,23,42,0.45); display:flex; align-items:center; justify-content:center; padding:1rem; z-index:50; }
+    .modal-card { width:100%; max-width:30rem; background:var(--paper); }
   `]
 })
 export class UsersComponent implements OnInit {
@@ -201,6 +240,9 @@ export class UsersComponent implements OnInit {
   tempUsername = signal<string>('');
 
   newUser: CreateUserPayload = { username: '', nombre: '', rol: 'user', email: '', password: '' };
+
+  editingUser = signal<SafeUser | null>(null);
+  editModel: { nombre: string; email: string } = { nombre: '', email: '' };
 
   constructor(
     private api: ApiService,
@@ -267,6 +309,52 @@ export class UsersComponent implements OnInit {
       error: (err) => {
         this.busy.set(false);
         this.snackBar.open(this.errMsg(err, 'No se pudo crear el usuario.'), 'Cerrar', { duration: 4000 });
+      },
+    });
+  }
+
+  openEdit(u: SafeUser): void {
+    this.editModel = { nombre: u.nombre, email: u.email ?? '' };
+    this.editingUser.set(u);
+  }
+
+  closeEdit(): void {
+    this.editingUser.set(null);
+  }
+
+  canSaveEdit(): boolean {
+    return this.editModel.nombre.trim().length > 0;
+  }
+
+  saveEdit(): void {
+    const u = this.editingUser();
+    if (!u || !this.canSaveEdit() || this.busy()) return;
+
+    const changes: UpdateUserPayload = {};
+    const nombre = this.editModel.nombre.trim();
+    const email = this.editModel.email.trim();
+    if (nombre !== u.nombre) changes.nombre = nombre;
+    // '' se envía tal cual; el backend lo convierte a null (quita el correo).
+    if (email !== (u.email ?? '')) changes.email = email;
+
+    if (Object.keys(changes).length === 0) {
+      this.closeEdit();
+      return;
+    }
+
+    this.busy.set(true);
+    this.api.updateUser(u.id, changes).subscribe({
+      next: (res) => {
+        this.busy.set(false);
+        if (res.success && res.data) {
+          this.snackBar.open(`${u.username} actualizado.`, 'Cerrar', { duration: 2500 });
+          this.closeEdit();
+          this.load();
+        }
+      },
+      error: (err) => {
+        this.busy.set(false);
+        this.snackBar.open(this.errMsg(err, 'No se pudo actualizar el usuario.'), 'Cerrar', { duration: 4000 });
       },
     });
   }
