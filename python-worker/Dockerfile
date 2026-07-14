@@ -22,4 +22,4 @@ RUN mkdir -p /app/uploads /app/outputs
 RUN useradd -m worker && chown -R worker:worker /app
 USER worker
 
-CMD ["celery", "-A", "app.workers.compression_worker", "worker", "--loglevel=info"]
+CMD ["python", "-m", "app.workers.poller"]
