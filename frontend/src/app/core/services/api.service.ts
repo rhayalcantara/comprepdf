@@ -29,12 +29,21 @@ export interface ApiResponse<T> {
   error?: { message: string };
 }
 
-export interface GlobalStats {
-  totalJobs: number;
-  completedJobs: number;
-  failedJobs: number;
-  pendingJobs: number;
-  successRate: number;
+/** Operaciones conocidas (incluye `certificate`, emisión de admin). */
+export type OperationType =
+  | 'compress' | 'split' | 'merge' | 'sign'
+  | 'extract' | 'rotate' | 'protect' | 'unlock' | 'certificate';
+
+/** Conteo agnóstico por operación (bloque `byOperation` del overview). */
+export interface OperationCount {
+  operation: OperationType;
+  total: number;
+  completed: number;
+  failed: number;
+}
+
+/** Métricas propias de compresión (bloque `compression` del overview). */
+export interface CompressionSummary {
   avgCompressionRatio: string;
   avgProcessingTimeMs: number;
   totalOriginalBytes: number;
@@ -43,31 +52,77 @@ export interface GlobalStats {
   totalCompressions: number;
 }
 
-export interface DailyStat {
-  date: string;
-  compressions: number;
-  avgCompressionRatio: string;
-  avgProcessingTimeMs: number;
-  totalOriginalBytes: number;
-  totalCompressedBytes: number;
-  spaceSaved: number;
+/** Resumen de usuarios (solo admin). */
+export interface UsersSummary {
+  total: number;
+  activos: number;
+  inactivos: number;
+  pendientes: number;
 }
 
+/** Fila de "top usuarios" (solo admin). */
+export interface TopUser {
+  userId: string;
+  username: string | null;
+  jobs: number;
+}
+
+/**
+ * Respuesta de `GET /stats/overview`. Los bloques `users`/`topUsers` solo llegan
+ * en modo admin (detecta con `'users' in data`). Los campos legacy de compresión
+ * a nivel superior existen en el backend pero NO se tipan aquí: usa `compression`.
+ */
+export interface StatsOverview {
+  totalJobs: number;
+  completedJobs: number;
+  failedJobs: number;
+  pendingJobs: number;
+  processingJobs: number;
+  successRate: number;
+  byOperation: OperationCount[];
+  compression: CompressionSummary;
+  storage: { outputBytes: number };
+  // Solo admin:
+  users?: UsersSummary;
+  topUsers?: TopUser[];
+}
+
+/**
+ * Punto de la tendencia diaria (`GET /stats/daily`). `total` y `byOperation`
+ * alimentan el apilado; los campos legacy de compresión se ignoran en el front.
+ */
+export interface DailyStat {
+  date: string;
+  total: number;
+  byOperation: Record<string, number>;
+}
+
+/** Desglose por nivel DPI, anidado en la operación `compress`. */
+export interface CompressionLevelStat {
+  level: string;
+  count: number;
+}
+
+/** Item de `GET /stats/operations`: conteo por operación (+ niveles en compress). */
+export interface OperationStat {
+  operation: OperationType;
+  count: number;
+  compressionLevels?: CompressionLevelStat[];
+}
+
+/** Item de `GET /stats/recent`. `username` solo en modo admin. */
 export interface RecentJob {
   jobId: string;
   status: string;
-  compressionLevel: string;
-  originalFilename?: string;
+  operationType: string;
+  compressionLevel: string | null;
+  originalFilename: string | null;
   originalSize: number | null;
   compressedSize: number | null;
   compressionRatio: number | null;
   createdAt: string;
-  completedAt?: string;
-}
-
-export interface CompressionLevelStat {
-  level: string;
-  count: number;
+  completedAt: string | null;
+  username?: string | null;
 }
 
 export type SignMode = 'certificate' | 'drawn' | 'combined';
@@ -328,20 +383,26 @@ export class ApiService {
     return this.http.delete<ApiResponse<void>>(`${this.baseUrl}/jobs/${jobId}`);
   }
 
-  getGlobalStats(): Observable<ApiResponse<GlobalStats>> {
-    return this.http.get<ApiResponse<GlobalStats>>(`${this.baseUrl}/stats`);
+  // --- Panel (estadísticas operation-aware y rol-aware) ---
+
+  /** Resumen del panel. El backend filtra por dueño salvo admin (global). */
+  getOverview(): Observable<ApiResponse<StatsOverview>> {
+    return this.http.get<ApiResponse<StatsOverview>>(`${this.baseUrl}/stats/overview`);
   }
 
+  /** Tendencia diaria (solo días con actividad). `days` = 7 o 30. */
   getDailyStats(days: number = 7): Observable<ApiResponse<DailyStat[]>> {
     return this.http.get<ApiResponse<DailyStat[]>>(`${this.baseUrl}/stats/daily?days=${days}`);
   }
 
-  getRecentJobs(limit: number = 10): Observable<ApiResponse<RecentJob[]>> {
-    return this.http.get<ApiResponse<RecentJob[]>>(`${this.baseUrl}/stats/recent?limit=${limit}`);
+  /** Conteo por operación; `compress` incluye el desglose por nivel DPI. */
+  getOperations(): Observable<ApiResponse<OperationStat[]>> {
+    return this.http.get<ApiResponse<OperationStat[]>>(`${this.baseUrl}/stats/operations`);
   }
 
-  getCompressionLevelStats(): Observable<ApiResponse<CompressionLevelStat[]>> {
-    return this.http.get<ApiResponse<CompressionLevelStat[]>>(`${this.baseUrl}/stats/levels`);
+  /** Últimos N jobs de cualquier operación (con `username` en modo admin). */
+  getRecentJobs(limit: number = 10): Observable<ApiResponse<RecentJob[]>> {
+    return this.http.get<ApiResponse<RecentJob[]>>(`${this.baseUrl}/stats/recent?limit=${limit}`);
   }
 
   // --- Mis trabajos ---

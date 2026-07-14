@@ -24,7 +24,7 @@ import { AuthService } from './core/services/auth.service';
               <a routerLink="/usuarios" routerLinkActive="nav-active" class="nav-link">Usuarios</a>
               <a routerLink="/certificados" routerLinkActive="nav-active" class="nav-link">Certificados</a>
             }
-            <a routerLink="/stats" routerLinkActive="nav-active" class="nav-link">Estadísticas</a>
+            <a routerLink="/stats" routerLinkActive="nav-active" class="nav-link">Panel</a>
 
             @if (user(); as u) {
               <button class="user-btn" [matMenuTriggerFor]="userMenu">

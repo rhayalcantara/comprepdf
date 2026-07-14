@@ -15,6 +15,14 @@ module.exports = {
           deep: '#1e46e0',
           soft: '#eaefff',
         },
+        ok: {
+          DEFAULT: '#059669',
+          soft: '#e7f6f0',
+        },
+        danger: {
+          DEFAULT: '#dc2626',
+          soft: '#fdecec',
+        },
       },
       fontFamily: {
         display: ['"Bricolage Grotesque Variable"', 'sans-serif'],
