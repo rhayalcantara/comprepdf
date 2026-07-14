@@ -1,29 +1,65 @@
-.stats-container {
-  max-width: 1400px;
-  margin: 0 auto;
+.tile-label {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
 }
 
-.stat-card {
-  mat-card-header {
-    margin-bottom: 1rem;
+.tile-value {
+  margin: 0.4rem 0 0;
+  font-size: 1.9rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.tile-hint {
+  margin: 0.3rem 0 0;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.level-tile {
+  padding: 1rem;
+  border-radius: 10px;
+  background: var(--mist);
+  border: 1px solid var(--line);
+}
+
+.empty-note {
+  padding: 1.5rem 0;
+  text-align: center;
+  color: var(--ink-soft);
+
+  a {
+    color: var(--cobalt);
   }
+}
 
-  mat-card-content {
-    padding-top: 0;
+.error-box {
+  display: flex;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: 10px;
+  background: var(--danger-soft);
+  color: var(--danger);
+
+  .material-icons {
+    font-size: 22px;
   }
 }
 
-mat-card {
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  border-radius: 8px;
-}
-
-table {
+.data-table {
   border-collapse: collapse;
 
   th {
+    font-size: 0.8rem;
     font-weight: 600;
-    color: #374151;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    border-bottom: 1px solid var(--line);
   }
 
   td, th {
@@ -31,6 +67,10 @@ table {
   }
 
   tbody tr {
-    transition: background-color 0.2s;
+    border-bottom: 1px solid var(--line);
+
+    &:hover {
+      background: var(--mist);
+    }
   }
 }

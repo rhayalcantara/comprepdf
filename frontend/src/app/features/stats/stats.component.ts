@@ -1,10 +1,9 @@
 import { Component, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { MatCardModule } from '@angular/material/card';
+import { RouterLink } from '@angular/router';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTableModule } from '@angular/material/table';
 import { MatIconModule } from '@angular/material/icon';
-import { MatButtonModule } from '@angular/material/button';
 import { ApiService, GlobalStats, DailyStat, RecentJob, CompressionLevelStat } from '../../core/services/api.service';
 
 @Component({
@@ -12,11 +11,10 @@ import { ApiService, GlobalStats, DailyStat, RecentJob, CompressionLevelStat } f
   standalone: true,
   imports: [
     CommonModule,
-    MatCardModule,
+    RouterLink,
     MatProgressSpinnerModule,
     MatTableModule,
-    MatIconModule,
-    MatButtonModule
+    MatIconModule
   ],
   templateUrl: './stats.component.html',
   styleUrls: ['./stats.component.scss']
@@ -103,6 +101,6 @@ export class StatsComponent implements OnInit {
       'high': 'Alta (300 DPI)',
       'custom': 'Personalizada'
     };
-    return labels[level] || level;
+    return labels[level] || level || 'Otras operaciones';
   }
 }
