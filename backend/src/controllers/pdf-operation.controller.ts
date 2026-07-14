@@ -16,6 +16,7 @@ import { sanitizeOutputName } from '../utils/filename';
  * El worker (poller) recoge el job pendiente directamente desde MySQL.
  */
 async function createPdfJob(
+  req: Request,
   res: Response,
   operationType: OperationType,
   params: Record<string, unknown>,
@@ -47,6 +48,7 @@ async function createPdfJob(
 
   const job = jobRepo.create({
     id: jobId,
+    userId: req.user?.id ?? null,
     status: 'pending',
     operationType,
     operationParams: { ...params, file_order: fileOrder },
@@ -108,7 +110,7 @@ export const splitPdf = async (req: Request, res: Response, next: NextFunction):
       if (ranges.length === 0) throw new ValidationError('At least one range is required');
       params.ranges = ranges;
     }
-    await createPdfJob(res, 'split', params, [req.file]);
+    await createPdfJob(req, res, 'split', params, [req.file]);
   } catch (error) {
     next(error);
   }
@@ -118,17 +120,51 @@ export const mergePdfs = async (req: Request, res: Response, next: NextFunction)
   try {
     const files = req.files as Express.Multer.File[] | undefined;
     if (!files || files.length < 2) throw new ValidationError('Merge requires at least 2 PDF files');
-    await createPdfJob(res, 'merge', { output_name: sanitizeOutputName(req.body.outputName) }, files);
+    const params: Record<string, unknown> = { output_name: sanitizeOutputName(req.body.outputName) };
+    // Selección de páginas por archivo (paralela al orden de `files`). Opcional:
+    // ausente ⇒ el worker une cada PDF completo.
+    const pageRanges = parseMergePageRanges(req.body.pageRanges, files.length);
+    if (pageRanges) params.page_ranges = pageRanges;
+    await createPdfJob(req, res, 'merge', params, files);
   } catch (error) {
     next(error);
   }
 };
 
+/**
+ * Normaliza `pageRanges` de merge: un array (o su forma JSON) paralelo a los
+ * archivos subidos, donde cada entrada es "all" o una lista tipo "1-3,5".
+ * Devuelve el array normalizado, o `null` si no aporta nada (ausente o todo
+ * "all") para que el worker use el comportamiento por defecto (PDF completo).
+ */
+function parseMergePageRanges(raw: unknown, fileCount: number): string[] | null {
+  if (raw === undefined || raw === null || raw === '') return null;
+  let arr: unknown = raw;
+  if (typeof raw === 'string') {
+    try {
+      arr = JSON.parse(raw);
+    } catch {
+      throw new ValidationError('pageRanges must be a JSON array');
+    }
+  }
+  if (!Array.isArray(arr)) throw new ValidationError('pageRanges must be an array');
+  if (arr.length !== fileCount) {
+    throw new ValidationError('pageRanges length must match the number of files');
+  }
+  const normalized = arr.map((value) => {
+    const spec = typeof value === 'string' ? value.trim() : '';
+    if (spec === '' || spec.toLowerCase() === 'all') return 'all';
+    if (!PAGES_PATTERN.test(spec)) throw new ValidationError(`Invalid page range: "${spec}"`);
+    return spec;
+  });
+  return normalized.every((spec) => spec === 'all') ? null : normalized;
+}
+
 export const extractPages = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     if (!req.file) throw new ValidationError('No file uploaded');
     if (!req.body.pages) throw new ValidationError('pages is required');
-    await createPdfJob(res, 'extract', {
+    await createPdfJob(req, res, 'extract', {
       pages: req.body.pages,
       output_name: sanitizeOutputName(req.body.outputName),
     }, [req.file]);
@@ -144,7 +180,7 @@ export const rotatePages = async (req: Request, res: Response, next: NextFunctio
     if (![90, 180, 270].includes(((degrees % 360) + 360) % 360) && degrees % 90 !== 0) {
       throw new ValidationError('degrees must be a multiple of 90');
     }
-    await createPdfJob(res, 'rotate', {
+    await createPdfJob(req, res, 'rotate', {
       pages: req.body.pages || 'all',
       degrees,
       output_name: sanitizeOutputName(req.body.outputName),
@@ -158,7 +194,7 @@ export const protectPdf = async (req: Request, res: Response, next: NextFunction
   try {
     if (!req.file) throw new ValidationError('No file uploaded');
     if (!req.body.password) throw new ValidationError('password is required');
-    await createPdfJob(res, 'protect', {
+    await createPdfJob(req, res, 'protect', {
       password: req.body.password,
       owner_password: req.body.ownerPassword || undefined,
       output_name: sanitizeOutputName(req.body.outputName),
@@ -172,7 +208,7 @@ export const unlockPdf = async (req: Request, res: Response, next: NextFunction)
   try {
     if (!req.file) throw new ValidationError('No file uploaded');
     if (!req.body.password) throw new ValidationError('password is required');
-    await createPdfJob(res, 'unlock', {
+    await createPdfJob(req, res, 'unlock', {
       password: req.body.password,
       output_name: sanitizeOutputName(req.body.outputName),
     }, [req.file]);
@@ -279,7 +315,7 @@ export const signPdf = async (req: Request, res: Response, next: NextFunction): 
     await assertIsPdf(pdf);
     if (needsSignature) await assertIsSignatureImage(signature!);
 
-    await createPdfJob(res, 'sign', params, [pdf]);
+    await createPdfJob(req, res, 'sign', params, [pdf]);
   } catch (error) {
     // Si una validación falla tras subir archivos, no dejar huérfanos en disco
     // (la imagen de la firma y el cert son datos sensibles).

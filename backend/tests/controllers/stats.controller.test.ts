@@ -15,9 +15,12 @@ describe('Stats Controller', () => {
     jsonMock = jest.fn();
     statusMock = jest.fn().mockReturnThis();
 
+    // Por defecto un admin: toma el camino "globales" (sin filtro por usuario),
+    // que es el comportamiento histórico verificado por estos tests.
     mockRequest = {
       query: {},
-      params: {}
+      params: {},
+      user: { id: 'admin-1', rol: 'admin' }
     };
 
     mockResponse = {
@@ -265,6 +268,90 @@ describe('Stats Controller', () => {
         success: true,
         data: []
       });
+    });
+  });
+
+  describe('filtrado por usuario (no admin)', () => {
+    it('getGlobalStats filtra los conteos por user_id y JOINea stats a job', async () => {
+      mockRequest.user = { id: 'user-7', rol: 'user' };
+
+      const leftJoinMock = jest.fn().mockReturnThis();
+      const whereMock = jest.fn().mockReturnThis();
+      const mockStatsRepo = {
+        createQueryBuilder: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnThis(),
+          addSelect: jest.fn().mockReturnThis(),
+          leftJoin: leftJoinMock,
+          where: whereMock,
+          getRawOne: jest.fn().mockResolvedValue({
+            avgCompressionRatio: '50.00',
+            avgProcessingTime: 1000,
+            totalOriginalSize: 200,
+            totalCompressedSize: 100,
+            totalCompressions: '3',
+          }),
+        }),
+      };
+      const countMock = jest.fn().mockResolvedValue(3);
+      const mockJobRepo = { count: countMock };
+
+      (AppDataSource.getRepository as jest.Mock)
+        .mockReturnValueOnce(mockStatsRepo)
+        .mockReturnValueOnce(mockJobRepo);
+
+      await getGlobalStats(mockRequest as Request, mockResponse as Response, mockNext);
+
+      // Los tres conteos llevan el filtro por dueño.
+      expect(countMock).toHaveBeenCalledWith({ where: { userId: 'user-7' } });
+      expect(countMock).toHaveBeenCalledWith({ where: { userId: 'user-7', status: 'completed' } });
+      expect(countMock).toHaveBeenCalledWith({ where: { userId: 'user-7', status: 'failed' } });
+      // El agregado de stats se restringe con un JOIN a job.
+      expect(leftJoinMock).toHaveBeenCalledWith('stats.job', 'job');
+      expect(whereMock).toHaveBeenCalledWith('job.user_id = :userId', { userId: 'user-7' });
+      expect(mockNext).not.toHaveBeenCalled();
+    });
+
+    it('getRecentJobs filtra por user_id cuando no es admin', async () => {
+      mockRequest.user = { id: 'user-7', rol: 'user' };
+      mockRequest.query = { limit: '5' };
+
+      const whereMock = jest.fn().mockReturnThis();
+      const mockJobRepo = {
+        createQueryBuilder: jest.fn().mockReturnValue({
+          leftJoinAndSelect: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          limit: jest.fn().mockReturnThis(),
+          where: whereMock,
+          getMany: jest.fn().mockResolvedValue([]),
+        }),
+      };
+      (AppDataSource.getRepository as jest.Mock).mockReturnValue(mockJobRepo);
+
+      await getRecentJobs(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(whereMock).toHaveBeenCalledWith('job.user_id = :userId', { userId: 'user-7' });
+      expect(jsonMock).toHaveBeenCalledWith({ success: true, data: [] });
+    });
+
+    it('getCompressionLevelStats filtra por user_id cuando no es admin', async () => {
+      mockRequest.user = { id: 'user-7', rol: 'user' };
+
+      const whereMock = jest.fn().mockReturnThis();
+      const mockJobRepo = {
+        createQueryBuilder: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnThis(),
+          addSelect: jest.fn().mockReturnThis(),
+          groupBy: jest.fn().mockReturnThis(),
+          where: whereMock,
+          getRawMany: jest.fn().mockResolvedValue([]),
+        }),
+      };
+      (AppDataSource.getRepository as jest.Mock).mockReturnValue(mockJobRepo);
+
+      await getCompressionLevelStats(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(whereMock).toHaveBeenCalledWith('job.user_id = :userId', { userId: 'user-7' });
+      expect(jsonMock).toHaveBeenCalledWith({ success: true, data: [] });
     });
   });
 });

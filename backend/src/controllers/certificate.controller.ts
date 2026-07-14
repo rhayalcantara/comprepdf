@@ -18,7 +18,10 @@ import { ValidationError } from '../utils/errors';
  * La contraseña del .pfx viaja de forma transitoria en operation_params; el
  * worker la usa una vez y la destruye (mismo patrón que la firma con .pfx).
  *
- * Ambos endpoints están protegidos por requireAdminKey (solo TI, decisión D1).
+ * Ambos endpoints están protegidos por `requireAuth` + `requireRole('admin')`
+ * (antes era `requireAdminKey`/`X-Admin-Key`; ahora una sola forma de auth).
+ * Se registra al admin emisor: `user_id` en el job y `emitido_por_user_id` en
+ * operation_params (el worker lo persiste en certificados_emitidos).
  */
 export const issueCertificate = async (
   req: Request,
@@ -40,6 +43,7 @@ export const issueCertificate = async (
 
     const job = jobRepo.create({
       id: jobId,
+      userId: req.user?.id ?? null,
       status: 'pending',
       operationType: 'certificate',
       operationParams: {
@@ -51,6 +55,9 @@ export const issueCertificate = async (
         pfx_password: pfxPassword,
         validity_years: validityYears ? parseInt(validityYears, 10) : undefined,
         emitido_por: 'admin',
+        // Auditoría: admin autenticado que emite. El worker lo escribe en
+        // certificados_emitidos.emitido_por_user_id.
+        emitido_por_user_id: req.user?.id ?? null,
       },
     });
 
@@ -107,6 +114,7 @@ export const listCertificates = async (
         notAfter: c.notAfter,
         estado: c.estado,
         emitidoPor: c.emitidoPor,
+        emitidoPorUserId: c.emitidoPorUserId ?? null,
         createdAt: c.createdAt,
       })),
     });

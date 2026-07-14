@@ -7,8 +7,29 @@ import { CompressionJob, CompressionLevel } from '../models/job.model';
 import { File } from '../models/file.model';
 import { config } from '../config/env';
 import { logger } from '../utils/logger';
-import { NotFoundError, ValidationError } from '../utils/errors';
+import { NotFoundError, ValidationError, UnauthorizedError } from '../utils/errors';
 import { sanitizeOutputName } from '../utils/filename';
+
+/**
+ * Autorización por ownership de un job. Reglas (ver PLAN_USUARIOS §5):
+ * - admin: ve/acciona cualquier job.
+ * - usuario normal: solo sus propios jobs.
+ * - un job de otro usuario o huérfano (`userId` NULL) responde **404** (no 403)
+ *   para no revelar la existencia de trabajos ajenos.
+ * Debe usarse SIEMPRE tras `requireAuth` (garantiza `req.user`).
+ */
+function assertJobVisible(job: { userId?: string | null }, req: Request): void {
+  const user = req.user;
+  if (!user) {
+    throw new UnauthorizedError();
+  }
+  if (user.rol === 'admin') {
+    return;
+  }
+  if (!job.userId || job.userId !== user.id) {
+    throw new NotFoundError('Job not found');
+  }
+}
 
 export const compressPdf = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -27,6 +48,7 @@ export const compressPdf = async (req: Request, res: Response, next: NextFunctio
     // Create job
     const job = jobRepo.create({
       id: jobId,
+      userId: req.user?.id ?? null,
       status: 'pending',
       operationType: 'compress',
       operationParams: outputName ? { output_name: outputName } : undefined,
@@ -87,6 +109,8 @@ export const getJobStatus = async (req: Request, res: Response, next: NextFuncti
       throw new NotFoundError('Job not found');
     }
 
+    assertJobVisible(job, req);
+
     const originalFile = job.files.find(f => f.fileType === 'original');
     // El archivo de resultado es 'compressed' (compresión) o 'output' (otras operaciones)
     const resultFile = job.files.find(f => f.fileType === 'compressed' || f.fileType === 'output');
@@ -120,6 +144,14 @@ export const downloadFile = async (req: Request, res: Response, next: NextFuncti
   try {
     const { jobId } = req.params;
 
+    // Cargar el job primero para aplicar ownership antes de exponer el archivo.
+    const jobRepo = AppDataSource.getRepository(CompressionJob);
+    const job = await jobRepo.findOne({ where: { id: jobId } });
+    if (!job) {
+      throw new NotFoundError('Job not found');
+    }
+    assertJobVisible(job, req);
+
     const fileRepo = AppDataSource.getRepository(File);
     const file = await fileRepo.findOne({
       where: { jobId, fileType: In(['compressed', 'output']) },
@@ -146,11 +178,13 @@ export const deleteJob = async (req: Request, res: Response, next: NextFunction)
     const { jobId } = req.params;
 
     const jobRepo = AppDataSource.getRepository(CompressionJob);
-    const result = await jobRepo.delete(jobId);
-
-    if (result.affected === 0) {
+    const job = await jobRepo.findOne({ where: { id: jobId } });
+    if (!job) {
       throw new NotFoundError('Job not found');
     }
+    assertJobVisible(job, req);
+
+    await jobRepo.delete(jobId);
 
     res.json({ success: true, message: 'Job deleted successfully' });
   } catch (error) {

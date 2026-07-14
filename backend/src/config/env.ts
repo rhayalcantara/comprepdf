@@ -26,8 +26,16 @@ export const config = {
     fileExpiryHours: parseInt(process.env.FILE_EXPIRY_HOURS || '24', 10),
   },
 
-  // Clave de administrador que protege el módulo de certificados (solo TI).
-  // Sin valor por defecto a propósito: el middleware falla cerrado si no está
-  // configurada, para no exponer la emisión de identidades digitales.
-  adminKey: process.env.CERT_ADMIN_KEY || '',
+  jwt: {
+    // Secreto para firmar/verificar los JWT (HS256). Sin valor por defecto a
+    // propósito: igual que CERT_ADMIN_KEY, el login/verificación fallan cerrado
+    // si no está configurado (nunca se usa un default inseguro).
+    secret: process.env.JWT_SECRET || '',
+    // Expiración del token; por defecto una jornada laboral.
+    expiresIn: process.env.JWT_EXPIRES_IN || '8h',
+  },
+
+  // Contraseña temporal del primer admin. El backend siembra el usuario `admin`
+  // en el arranque solo si esta variable está definida (con must_change_password).
+  adminInitialPassword: process.env.ADMIN_INITIAL_PASSWORD || '',
 };

@@ -2,28 +2,48 @@ import { Request, Response, NextFunction } from 'express';
 import { AppDataSource } from '../config/database';
 import { CompressionStats } from '../models/stats.model';
 import { CompressionJob } from '../models/job.model';
-import { Between, MoreThan } from 'typeorm';
 
-export const getGlobalStats = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+/**
+ * Filtro de ownership para las estadísticas: el admin ve las cifras globales;
+ * un usuario normal ve solo las suyas (`user_id = req.user.id`). Devuelve
+ * `undefined` (sin filtro) para admin. Requiere `req.user` (montar tras
+ * `requireAuth`).
+ */
+function statsUserId(req: Request): string | undefined {
+  if (!req.user || req.user.rol === 'admin') {
+    return undefined;
+  }
+  return req.user.id;
+}
+
+export const getGlobalStats = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const statsRepo = AppDataSource.getRepository(CompressionStats);
     const jobRepo = AppDataSource.getRepository(CompressionJob);
 
-    // Estadísticas globales
+    const userId = statsUserId(req);
+    // Filtro por dueño en los conteos de jobs (admin: sin filtro = globales).
+    const jobWhere = userId ? { userId } : {};
+
     const [totalJobs, completedJobs, failedJobs] = await Promise.all([
-      jobRepo.count(),
-      jobRepo.count({ where: { status: 'completed' } }),
-      jobRepo.count({ where: { status: 'failed' } }),
+      jobRepo.count({ where: { ...jobWhere } }),
+      jobRepo.count({ where: { ...jobWhere, status: 'completed' } }),
+      jobRepo.count({ where: { ...jobWhere, status: 'failed' } }),
     ]);
 
-    const stats = await statsRepo
+    const statsQb = statsRepo
       .createQueryBuilder('stats')
       .select('AVG(stats.compression_ratio)', 'avgCompressionRatio')
       .addSelect('AVG(stats.processing_time_ms)', 'avgProcessingTime')
       .addSelect('SUM(stats.original_size)', 'totalOriginalSize')
       .addSelect('SUM(stats.compressed_size)', 'totalCompressedSize')
-      .addSelect('COUNT(stats.id)', 'totalCompressions')
-      .getRawOne();
+      .addSelect('COUNT(stats.id)', 'totalCompressions');
+
+    if (userId) {
+      statsQb.leftJoin('stats.job', 'job').where('job.user_id = :userId', { userId });
+    }
+
+    const stats = await statsQb.getRawOne();
 
     res.json({
       success: true,
@@ -55,8 +75,9 @@ export const getDailyStats = async (req: Request, res: Response, next: NextFunct
     startDate.setDate(startDate.getDate() - daysNumber);
 
     const statsRepo = AppDataSource.getRepository(CompressionStats);
+    const userId = statsUserId(req);
 
-    const dailyStats = await statsRepo
+    const dailyQb = statsRepo
       .createQueryBuilder('stats')
       .select('DATE(stats.created_at)', 'date')
       .addSelect('COUNT(stats.id)', 'count')
@@ -64,7 +85,13 @@ export const getDailyStats = async (req: Request, res: Response, next: NextFunct
       .addSelect('AVG(stats.processing_time_ms)', 'avgTime')
       .addSelect('SUM(stats.original_size)', 'totalOriginal')
       .addSelect('SUM(stats.compressed_size)', 'totalCompressed')
-      .where('stats.created_at >= :startDate', { startDate })
+      .where('stats.created_at >= :startDate', { startDate });
+
+    if (userId) {
+      dailyQb.leftJoin('stats.job', 'job').andWhere('job.user_id = :userId', { userId });
+    }
+
+    const dailyStats = await dailyQb
       .groupBy('DATE(stats.created_at)')
       .orderBy('date', 'ASC')
       .getRawMany();
@@ -92,13 +119,19 @@ export const getRecentJobs = async (req: Request, res: Response, next: NextFunct
     const limitNumber = parseInt(limit as string, 10);
 
     const jobRepo = AppDataSource.getRepository(CompressionJob);
+    const userId = statsUserId(req);
 
-    const recentJobs = await jobRepo
+    const recentQb = jobRepo
       .createQueryBuilder('job')
       .leftJoinAndSelect('job.files', 'file')
       .orderBy('job.created_at', 'DESC')
-      .limit(limitNumber)
-      .getMany();
+      .limit(limitNumber);
+
+    if (userId) {
+      recentQb.where('job.user_id = :userId', { userId });
+    }
+
+    const recentJobs = await recentQb.getMany();
 
     res.json({
       success: true,
@@ -127,16 +160,22 @@ export const getRecentJobs = async (req: Request, res: Response, next: NextFunct
   }
 };
 
-export const getCompressionLevelStats = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+export const getCompressionLevelStats = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const jobRepo = AppDataSource.getRepository(CompressionJob);
+    const userId = statsUserId(req);
 
-    const levelStats = await jobRepo
+    const levelQb = jobRepo
       .createQueryBuilder('job')
       .select('job.compression_level', 'level')
       .addSelect('COUNT(*)', 'count')
-      .groupBy('job.compression_level')
-      .getRawMany();
+      .groupBy('job.compression_level');
+
+    if (userId) {
+      levelQb.where('job.user_id = :userId', { userId });
+    }
+
+    const levelStats = await levelQb.getRawMany();
 
     res.json({
       success: true,

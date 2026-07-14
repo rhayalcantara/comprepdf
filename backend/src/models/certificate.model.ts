@@ -48,6 +48,13 @@ export class Certificate {
   @Column({ name: 'emitido_por', type: 'varchar', length: 100, nullable: true })
   emitidoPor?: string;
 
+  /**
+   * Auditoría: usuario (rol admin) que emitió el certificado. Lo persiste el
+   * worker desde `operation_params.emitido_por_user_id`. FK ON DELETE SET NULL.
+   */
+  @Column({ name: 'emitido_por_user_id', type: 'varchar', length: 36, nullable: true })
+  emitidoPorUserId?: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt!: Date;
 }

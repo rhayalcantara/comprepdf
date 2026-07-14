@@ -6,6 +6,7 @@ import { config } from './config/env';
 import { initializeDatabase } from './config/database';
 import { initializeRedis } from './config/redis';
 import { cleanupService } from './services/cleanup.service';
+import { seedInitialAdmin } from './models/user.model';
 import { errorHandler, notFoundHandler } from './middlewares/error.middleware';
 import { logger } from './utils/logger';
 import routes from './routes';
@@ -42,6 +43,14 @@ app.use(errorHandler);
 const startServer = async (): Promise<void> => {
   try {
     await initializeDatabase();
+
+    // Siembra del primer admin (idempotente; no hace nada si ya existe o si
+    // ADMIN_INITIAL_PASSWORD no está definida).
+    try {
+      await seedInitialAdmin();
+    } catch (err) {
+      logger.warn('No se pudo sembrar el usuario admin inicial:', err);
+    }
 
     // Redis es opcional (ya no se usa como broker tras migrar a polling en MySQL).
     // No debe impedir el arranque si no está disponible.
