@@ -103,6 +103,19 @@ def test_merge(tmp_path):
     assert len(merged.pages) == 7
 
 
+def test_merge_with_page_ranges(tmp_path):
+    a, b = tmp_path / 'a.pdf', tmp_path / 'b.pdf'
+    make_pdf(a, 5)
+    make_pdf(b, 4)
+    cur = FakeCursor([_original(a, 'a.pdf', 'fa'), _original(b, 'b.pdf', 'fb')])
+    # De 'a' solo páginas 1-2; de 'b' todo el documento.
+    params = {'file_order': ['fa', 'fb'], 'page_ranges': ['1-2', 'all']}
+    pdf_ops.handle_merge({'id': 'j1', 'operation_params': params}, cur)
+
+    merged = pikepdf.open(cur.output_paths()[0])
+    assert len(merged.pages) == 2 + 4
+
+
 def test_extract(tmp_path):
     src = tmp_path / 'in.pdf'
     make_pdf(src, 10)

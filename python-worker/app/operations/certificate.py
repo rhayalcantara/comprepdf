@@ -76,21 +76,36 @@ def handle_certificate(job: Dict[str, Any], cursor) -> Dict[str, Any]:
             mime_type='application/x-pkcs12',
         )
 
-        _register_certificate(cursor, job_id, issued, employee, params.get('emitido_por'))
+        _register_certificate(
+            cursor,
+            job_id,
+            issued,
+            employee,
+            params.get('emitido_por'),
+            params.get('emitido_por_user_id'),
+        )
     finally:
         _destroy_password(cursor, job_id)
 
     return {'files_output': 1}
 
 
-def _register_certificate(cursor, job_id, issued, employee: EmployeeInfo, emitido_por) -> None:
-    """Anota el certificado emitido en certificados_emitidos (auditoría)."""
+def _register_certificate(
+    cursor, job_id, issued, employee: EmployeeInfo, emitido_por, emitido_por_user_id=None
+) -> None:
+    """Anota el certificado emitido en certificados_emitidos (auditoría).
+
+    `emitido_por_user_id` cierra la trazabilidad: es el id del admin autenticado
+    que emitió el certificado (lo envía el backend en operation_params). Puede ser
+    None (FK nullable con ON DELETE SET NULL).
+    """
     cursor.execute(
         """
         INSERT INTO certificados_emitidos
             (serial, job_id, empleado_nombre, empleado_cedula, empleado_email,
-             departamento, not_before, not_after, estado, emitido_por)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'activo', %s)
+             departamento, not_before, not_after, estado, emitido_por,
+             emitido_por_user_id)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'activo', %s, %s)
         """,
         (
             issued.serial_hex,
@@ -102,6 +117,7 @@ def _register_certificate(cursor, job_id, issued, employee: EmployeeInfo, emitid
             issued.not_before.astimezone(_dt.timezone.utc).replace(tzinfo=None),
             issued.not_after.astimezone(_dt.timezone.utc).replace(tzinfo=None),
             emitido_por or 'admin',
+            emitido_por_user_id,
         ),
     )
 

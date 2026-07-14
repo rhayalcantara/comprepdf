@@ -93,6 +93,25 @@ def test_handler_emite_y_registra():
     assert any('JSON_REMOVE' in s and 'PFX_PASSWORD' in s for s, _ in cur.updates)
 
 
+def test_handler_persiste_emitido_por_user_id():
+    """La columna de auditoría emitido_por_user_id se toma de operation_params."""
+    cur = FakeCursor()
+    handle_certificate(_job(emitido_por_user_id='admin-9'), cur)
+
+    assert len(cur.cert_inserts) == 1
+    # emitido_por_user_id es el último parámetro del INSERT en certificados_emitidos.
+    assert cur.cert_inserts[0][-1] == 'admin-9'
+
+
+def test_handler_emitido_por_user_id_ausente_es_none():
+    """Si no viene en params, se persiste NULL (None) sin fallar."""
+    cur = FakeCursor()
+    handle_certificate(_job(), cur)
+
+    assert len(cur.cert_inserts) == 1
+    assert cur.cert_inserts[0][-1] is None
+
+
 def test_handler_falla_sin_nombre():
     cur = FakeCursor()
     with pytest.raises(ValueError):

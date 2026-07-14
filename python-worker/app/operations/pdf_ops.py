@@ -68,7 +68,12 @@ def handle_split(job: Dict[str, Any], cursor) -> Dict[str, Any]:
 
 
 def handle_merge(job: Dict[str, Any], cursor) -> Dict[str, Any]:
-    """Une varios PDFs en uno solo respetando file_order si se provee."""
+    """Une varios PDFs en uno solo respetando file_order si se provee.
+
+    Si `page_ranges` está presente (lista paralela a file_order), de cada PDF se
+    toman solo las páginas indicadas ("all" o una lista tipo "1-3,5"); si falta o
+    es "all" se incluye el documento completo.
+    """
     job_id = job['id']
     params = parse_params(job)
     file_order = params.get('file_order')
@@ -76,15 +81,24 @@ def handle_merge(job: Dict[str, Any], cursor) -> Dict[str, Any]:
     if len(originals) < 2:
         raise ValueError("Merge requires at least 2 files")
 
+    page_ranges = params.get('page_ranges')
+    if not isinstance(page_ranges, list):
+        page_ranges = []
+
     out_name = f"{custom_basename(params) or 'merged'}.pdf"
     out_path = output_path(job_id, out_name)
     merged = pikepdf.Pdf.new()
     sources = []
     try:
-        for original in originals:
+        for i, original in enumerate(originals):
             src = pikepdf.open(Path(original['file_path']))
             sources.append(src)
-            merged.pages.extend(src.pages)
+            spec = page_ranges[i] if i < len(page_ranges) else None
+            if spec in (None, '', 'all'):
+                merged.pages.extend(src.pages)
+            else:
+                for idx in parse_page_list(spec, len(src.pages)):
+                    merged.pages.append(src.pages[idx])
         merged.save(out_path)
     finally:
         for src in sources:
