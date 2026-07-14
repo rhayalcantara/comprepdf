@@ -4,19 +4,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ComprePDF is a PDF compression service with a microservices architecture:
+ComprePDF is a PDF service (compression + operations) with a microservices architecture:
 - **Frontend**: Angular 17+ with Angular Material and TailwindCSS
 - **Backend API**: Node.js + Express + TypeScript
-- **Compression Worker**: Python + Celery + Ghostscript
+- **PDF Worker**: Python + Ghostscript (compress) + pikepdf (split/merge/extract/rotate/protect/unlock) + pyHanko (digital signature)
 - **Database**: MySQL 8.0
-- **Queue/Cache**: Redis
+- **Cache**: Redis
+
+> **Job delivery**: the worker is a **MySQL polling loop** (`python-worker/app/workers/poller.py`),
+> not a message broker. The backend inserts a `compression_jobs` row with
+> `status='pending'` and `operation_type`; the poller claims it with
+> `SELECT ... FOR UPDATE SKIP LOCKED` and dispatches to a handler in
+> `app/operations/`. (BullMQ and Celery were removed — they were mutually
+> incompatible and delivered nothing.)
 
 ## Architecture
 
 ```
-Angular (4200) → Node.js API (3000) → Redis Queue → Python Worker (8000)
-                       ↓                                    ↓
-                    MySQL ←─────────────────────────────────┘
+Angular (4200) → Node.js API (3000) → MySQL ← (poll) Python Worker
+                                         ↑                  │
+                                         └── writes output ─┘
+     (uploads_data / outputs_data son volúmenes compartidos)
 ```
 
 ## Common Commands
@@ -77,11 +85,27 @@ mysql -u root -p comprepdf < database/schema.sql
 
 ```
 POST   /api/v1/compress              # Upload and compress PDF
-GET    /api/v1/jobs/:jobId           # Get job status
-GET    /api/v1/jobs/:jobId/download  # Download compressed PDF
+POST   /api/v1/pdf/split             # Split into pages/ranges (returns a ZIP)
+POST   /api/v1/pdf/merge             # Merge multiple PDFs (field: files[])
+POST   /api/v1/pdf/sign              # Digital signature (fields: file, cert .pfx; body: password)
+POST   /api/v1/pdf/extract           # Extract pages (body: pages, e.g. "1-3,5")
+POST   /api/v1/pdf/rotate            # Rotate pages (body: degrees, pages)
+POST   /api/v1/pdf/protect           # Add password (body: password)
+POST   /api/v1/pdf/unlock            # Remove password (body: password)
+GET    /api/v1/jobs/:jobId           # Get job status (any operation)
+GET    /api/v1/jobs/:jobId/download  # Download result (any operation)
 DELETE /api/v1/jobs/:jobId           # Delete job
 GET    /api/v1/health                # Health check
 ```
+
+New operations follow one pattern: controller inserts a `compression_jobs` row
+(`operation_type` + `operation_params` JSON) and original file(s); the poller
+dispatches to `python-worker/app/operations/` and writes an `output` file row.
+
+All operations (including compress) accept an optional `outputName` body field:
+the user-chosen name for the result file (extension added automatically; for
+split it names the ZIP and the per-part prefix). Sanitized in the backend
+(`utils/filename.ts`) and again in the worker (`common.custom_basename`).
 
 ## Compression Levels
 

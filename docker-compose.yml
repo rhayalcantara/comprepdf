@@ -97,7 +97,7 @@ services:
         condition: service_healthy
     networks:
       - comprepdf-network
-    command: celery -A app.workers.compression_worker worker --loglevel=info
+    command: python -m app.workers.poller
 
   frontend:
     build:
