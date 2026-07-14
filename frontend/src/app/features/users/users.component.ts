@@ -1,4 +1,4 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, computed, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
@@ -16,6 +16,12 @@ import { AuthService, SafeUser } from '../../core/services/auth.service';
           <h1 class="font-display text-2xl md:text-3xl font-bold m-0">Usuarios</h1>
           <p class="text-ink-soft m-0 mt-1">Gestiona las cuentas del equipo. Solo administradores.</p>
         </div>
+        @if (pendingCount() > 0) {
+          <span class="pending-pill" title="Cuentas pendientes de activación">
+            <span class="material-icons" style="font-size:18px">hourglass_top</span>
+            {{ pendingCount() }} pendiente{{ pendingCount() === 1 ? '' : 's' }} de activación
+          </span>
+        }
         <button class="btn-cta" (click)="toggleCreate()">
           <span class="material-icons">{{ showCreate() ? 'close' : 'person_add' }}</span>
           {{ showCreate() ? 'Cerrar' : 'Nuevo usuario' }}
@@ -100,8 +106,8 @@ import { AuthService, SafeUser } from '../../core/services/auth.service';
                 </tr>
               </thead>
               <tbody>
-                @for (u of users(); track u.id) {
-                  <tr>
+                @for (u of sortedUsers(); track u.id) {
+                  <tr [class.row-pending]="u.estado === 'pendiente'">
                     <td>
                       <span class="font-medium">{{ u.username }}</span>
                       @if (isSelf(u)) { <span class="self-tag">tú</span> }
@@ -116,12 +122,19 @@ import { AuthService, SafeUser } from '../../core/services/auth.service';
                       </select>
                     </td>
                     <td>
-                      <span class="badge" [class.badge-ok]="u.estado === 'activo'" [class.badge-off]="u.estado !== 'activo'">
+                      <span class="badge"
+                            [class.badge-ok]="u.estado === 'activo'"
+                            [class.badge-pending]="u.estado === 'pendiente'"
+                            [class.badge-off]="u.estado === 'inactivo'">
                         {{ u.estado }}
                       </span>
                     </td>
                     <td class="text-right actions">
-                      @if (u.estado === 'activo') {
+                      @if (u.estado === 'pendiente') {
+                        <button class="btn-activate" [disabled]="busy()" (click)="setEstado(u, 'activo')">
+                          <span class="material-icons" style="font-size:16px">check</span> Activar
+                        </button>
+                      } @else if (u.estado === 'activo') {
                         <button class="link-btn" [disabled]="isSelf(u) || busy()" (click)="setEstado(u, 'inactivo')">
                           Desactivar
                         </button>
@@ -158,7 +171,13 @@ import { AuthService, SafeUser } from '../../core/services/auth.service';
     .self-tag { display:inline-block; margin-left:0.4rem; padding:0.05rem 0.45rem; border-radius:999px; background:var(--mist); color:var(--ink-soft); font-size:0.7rem; font-weight:600; text-transform:uppercase; }
     .badge { display:inline-block; padding:0.15rem 0.6rem; border-radius:999px; font-size:0.8rem; font-weight:600; text-transform:capitalize; }
     .badge-ok { background:var(--ok-soft); color:#0f7b4a; }
+    .badge-pending { background:#fff4e0; color:#b45309; }
     .badge-off { background:var(--mist); color:var(--ink-soft); }
+    .row-pending { background:#fffaf0; }
+    .pending-pill { display:inline-flex; align-items:center; gap:0.35rem; padding:0.35rem 0.8rem; border-radius:999px; background:#fff4e0; color:#b45309; font-size:0.85rem; font-weight:600; }
+    .btn-activate { display:inline-flex; align-items:center; gap:0.25rem; padding:0.35rem 0.8rem; border:none; border-radius:8px; background:#0f7b4a; color:#fff; font-weight:600; font-size:0.85rem; cursor:pointer; font-family:inherit; margin-right:0.4rem; }
+    .btn-activate:hover:not(:disabled) { background:#0c6640; }
+    .btn-activate:disabled { opacity:0.55; cursor:not-allowed; }
     .mini-select { padding:0.35rem 1.8rem 0.35rem 0.6rem; border:1px solid var(--line); border-radius:8px; background:var(--paper); font-family:inherit; font-size:0.9rem; cursor:pointer; appearance:none; background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='%2351617d'><path d='M7 10l5 5 5-5z'/></svg>"); background-repeat:no-repeat; background-position:right 0.4rem center; }
     .mini-select:disabled { opacity:0.55; cursor:not-allowed; }
     .actions { white-space:nowrap; }
@@ -169,6 +188,12 @@ import { AuthService, SafeUser } from '../../core/services/auth.service';
 })
 export class UsersComponent implements OnInit {
   users = signal<SafeUser[]>([]);
+  /** Los pendientes primero (atención del admin); el resto en su orden original. */
+  sortedUsers = computed(() => {
+    const rank = (e: SafeUser['estado']) => (e === 'pendiente' ? 0 : 1);
+    return [...this.users()].sort((a, b) => rank(a.estado) - rank(b.estado));
+  });
+  pendingCount = computed(() => this.users().filter((u) => u.estado === 'pendiente').length);
   loading = signal(false);
   busy = signal(false);
   showCreate = signal(false);

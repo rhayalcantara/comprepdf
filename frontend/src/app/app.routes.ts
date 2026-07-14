@@ -9,6 +9,13 @@ export const routes: Routes = [
     loadComponent: () => import('./features/login/login.component').then(m => m.LoginComponent)
   },
 
+  // Pública: autorregistro (sin authGuard, igual que /login). Un usuario no
+  // logueado debe poder llegar aquí para crear su cuenta.
+  {
+    path: 'registro',
+    loadComponent: () => import('./features/register/register.component').then(m => m.RegisterComponent)
+  },
+
   // Cambio de contraseña obligatorio: protegida por authGuard, pero el guard la
   // permite aun con mustChangePassword=true (para poder completar el cambio).
   {

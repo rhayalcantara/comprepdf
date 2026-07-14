@@ -11,7 +11,7 @@ export interface SafeUser {
   email: string | null;
   nombre: string;
   rol: 'admin' | 'user';
-  estado: 'activo' | 'inactivo';
+  estado: 'activo' | 'inactivo' | 'pendiente';
   authProvider: 'local' | 'ad';
   mustChangePassword: boolean;
   lastLoginAt: string | null;
@@ -87,6 +87,23 @@ export class AuthService {
           }
         }),
       );
+  }
+
+  /**
+   * Autorregistro público (sin token). La cuenta nace `pendiente` y NO hay
+   * auto-login: no se guarda token ni user. Devuelve el mensaje de éxito del
+   * backend; propaga el error para que el componente muestre su `message`.
+   */
+  register(payload: {
+    username: string;
+    nombre: string;
+    email: string;
+    password: string;
+  }): Observable<ApiResponse<{ message: string }>> {
+    return this.http.post<ApiResponse<{ message: string }>>(
+      `${this.baseUrl}/auth/register`,
+      payload,
+    );
   }
 
   /** Cambio de contraseña propio. Al éxito, limpia `mustChangePassword` localmente. */

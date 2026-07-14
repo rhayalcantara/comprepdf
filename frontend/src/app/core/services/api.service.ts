@@ -173,7 +173,7 @@ export interface CreateUserResult {
 
 export interface UpdateUserPayload {
   rol?: 'admin' | 'user';
-  estado?: 'activo' | 'inactivo';
+  estado?: 'activo' | 'inactivo' | 'pendiente';
   nombre?: string;
   email?: string;
   newPassword?: string;

@@ -153,11 +153,11 @@ export class AppComponent {
   user = computed(() => this.auth.user());
   isAdmin = computed(() => this.auth.isAdmin());
 
-  /** Oculta header/footer en /login (sin sesión no hay nada que mostrar). */
+  /** Oculta header/footer en /login y /registro (páginas públicas sin sesión). */
   showChrome = computed(() => {
     if (!this.auth.isAuthenticated()) return false;
     const url = this.currentUrl().split('?')[0];
-    return url !== '/login';
+    return url !== '/login' && url !== '/registro';
   });
 
   constructor(private auth: AuthService, private router: Router) {

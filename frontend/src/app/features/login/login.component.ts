@@ -1,13 +1,13 @@
 import { Component, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterLink],
   template: `
     <div class="login-wrap">
       <div class="sheet login-card p-8">
@@ -42,6 +42,11 @@ import { AuthService } from '../../core/services/auth.service';
             @if (loading()) { Entrando… } @else { Iniciar sesión }
           </button>
         </form>
+
+        <p class="text-center text-sm text-ink-soft mt-5 mb-0">
+          ¿No tienes cuenta?
+          <a routerLink="/registro" class="text-cobalt font-medium no-underline">Crear cuenta</a>
+        </p>
       </div>
     </div>
   `,
@@ -89,10 +94,13 @@ export class LoginComponent {
       error: (err) => {
         this.loading.set(false);
         const status = err?.status;
+        // El backend distingue estado 'pendiente' de 'inactivo' con su propio
+        // mensaje en el 403; lo mostramos tal cual (no como credenciales malas).
+        const backendMsg = err?.error?.error?.message;
         if (status === 401) {
           this.error.set('Usuario o contraseña incorrectos.');
         } else if (status === 403) {
-          this.error.set('Tu cuenta está inactiva. Contacta al administrador.');
+          this.error.set(backendMsg || 'Tu cuenta está inactiva. Contacta al administrador.');
         } else if (status === 503) {
           this.error.set('La autenticación no está configurada en el servidor.');
         } else if (status === 429) {
