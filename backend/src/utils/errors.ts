@@ -5,7 +5,10 @@ export class AppError extends Error {
     public isOperational: boolean = true
   ) {
     super(message);
-    Object.setPrototypeOf(this, AppError.prototype);
+    // new.target preserva el prototipo de la subclase real (ValidationError,
+    // NotFoundError, ...); con AppError.prototype fijo, `instanceof Subclase`
+    // siempre daba false.
+    Object.setPrototypeOf(this, new.target.prototype);
   }
 }
 

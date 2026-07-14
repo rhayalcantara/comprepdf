@@ -5,7 +5,6 @@ import rateLimit from 'express-rate-limit';
 import { config } from './config/env';
 import { initializeDatabase } from './config/database';
 import { initializeRedis } from './config/redis';
-import { initializeQueue } from './services/queue.service';
 import { cleanupService } from './services/cleanup.service';
 import { errorHandler, notFoundHandler } from './middlewares/error.middleware';
 import { logger } from './utils/logger';
@@ -43,8 +42,14 @@ app.use(errorHandler);
 const startServer = async (): Promise<void> => {
   try {
     await initializeDatabase();
-    await initializeRedis();
-    initializeQueue();
+
+    // Redis es opcional (ya no se usa como broker tras migrar a polling en MySQL).
+    // No debe impedir el arranque si no está disponible.
+    try {
+      await initializeRedis();
+    } catch (err) {
+      logger.warn('Redis no disponible; continuando sin caché Redis (no requerido).');
+    }
 
     // Iniciar servicio de limpieza (ejecuta cada hora)
     cleanupService.start(60);

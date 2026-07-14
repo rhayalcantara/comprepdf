@@ -30,6 +30,7 @@ export class CleanupService {
   stop(): void {
     if (this.intervalId) {
       clearInterval(this.intervalId);
+      this.intervalId = undefined;
       logger.info('Cleanup service stopped');
     }
   }

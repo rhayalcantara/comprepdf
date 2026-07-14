@@ -3,6 +3,7 @@ import { config } from './env';
 import { CompressionJob } from '../models/job.model';
 import { File } from '../models/file.model';
 import { CompressionStats } from '../models/stats.model';
+import { Certificate } from '../models/certificate.model';
 
 export const AppDataSource = new DataSource({
   type: 'mysql',
@@ -13,7 +14,7 @@ export const AppDataSource = new DataSource({
   database: config.mysql.database,
   synchronize: false,
   logging: config.nodeEnv === 'development',
-  entities: [CompressionJob, File, CompressionStats],
+  entities: [CompressionJob, File, CompressionStats, Certificate],
   migrations: [],
   subscribers: [],
 });

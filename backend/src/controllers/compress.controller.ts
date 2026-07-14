@@ -1,13 +1,14 @@
 import { Request, Response, NextFunction } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
+import { In } from 'typeorm';
 import { AppDataSource } from '../config/database';
 import { CompressionJob, CompressionLevel } from '../models/job.model';
 import { File } from '../models/file.model';
-import { addCompressionJob } from '../services/queue.service';
 import { config } from '../config/env';
 import { logger } from '../utils/logger';
 import { NotFoundError, ValidationError } from '../utils/errors';
+import { sanitizeOutputName } from '../utils/filename';
 
 export const compressPdf = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -16,6 +17,7 @@ export const compressPdf = async (req: Request, res: Response, next: NextFunctio
     }
 
     const { compressionLevel = 'medium', preserveMetadata = true, customDpi } = req.body;
+    const outputName = sanitizeOutputName(req.body.outputName);
     const jobId = uuidv4();
     const fileId = uuidv4();
 
@@ -26,6 +28,8 @@ export const compressPdf = async (req: Request, res: Response, next: NextFunctio
     const job = jobRepo.create({
       id: jobId,
       status: 'pending',
+      operationType: 'compress',
+      operationParams: outputName ? { output_name: outputName } : undefined,
       compressionLevel: compressionLevel as CompressionLevel,
       preserveMetadata: preserveMetadata === 'true' || preserveMetadata === true,
       customDpi: customDpi ? parseInt(customDpi, 10) : undefined,
@@ -49,13 +53,7 @@ export const compressPdf = async (req: Request, res: Response, next: NextFunctio
     });
     await fileRepo.save(file);
 
-    // Add to queue
-    await addCompressionJob(jobId, {
-      compressionLevel,
-      customDpi: customDpi ? parseInt(customDpi, 10) : null,
-      preserveMetadata,
-    });
-
+    // El worker (poller) recoge el job pendiente directamente desde MySQL.
     logger.info(`Job ${jobId} created for file ${req.file.originalname}`);
 
     res.status(201).json({
@@ -90,21 +88,24 @@ export const getJobStatus = async (req: Request, res: Response, next: NextFuncti
     }
 
     const originalFile = job.files.find(f => f.fileType === 'original');
-    const compressedFile = job.files.find(f => f.fileType === 'compressed');
+    // El archivo de resultado es 'compressed' (compresión) o 'output' (otras operaciones)
+    const resultFile = job.files.find(f => f.fileType === 'compressed' || f.fileType === 'output');
 
     res.json({
       success: true,
       data: {
         jobId: job.id,
         status: job.status,
+        operationType: job.operationType,
         originalFilename: originalFile?.originalFilename,
         originalSize: originalFile ? Number(originalFile.fileSize) : null,
-        compressedSize: compressedFile ? Number(compressedFile.fileSize) : null,
-        compressionRatio: compressedFile && originalFile
-          ? Math.round((1 - Number(compressedFile.fileSize) / Number(originalFile.fileSize)) * 100)
+        outputFilename: resultFile?.originalFilename,
+        compressedSize: resultFile ? Number(resultFile.fileSize) : null,
+        compressionRatio: resultFile && originalFile && job.operationType === 'compress'
+          ? Math.round((1 - Number(resultFile.fileSize) / Number(originalFile.fileSize)) * 100)
           : null,
-        downloadUrl: compressedFile ? `/api/v1/jobs/${jobId}/download` : null,
-        expiresAt: compressedFile?.expiresAt,
+        downloadUrl: resultFile ? `/api/v1/jobs/${jobId}/download` : null,
+        expiresAt: resultFile?.expiresAt,
         createdAt: job.createdAt,
         completedAt: job.completedAt,
         errorMessage: job.errorMessage,
@@ -121,14 +122,20 @@ export const downloadFile = async (req: Request, res: Response, next: NextFuncti
 
     const fileRepo = AppDataSource.getRepository(File);
     const file = await fileRepo.findOne({
-      where: { jobId, fileType: 'compressed' },
+      where: { jobId, fileType: In(['compressed', 'output']) },
     });
 
     if (!file) {
-      throw new NotFoundError('Compressed file not found');
+      throw new NotFoundError('Output file not found');
     }
 
-    res.download(file.filePath, `compressed_${file.originalFilename}`);
+    // Para compresión conservamos el prefijo histórico; para el resto usamos el
+    // nombre amigable ya almacenado por el worker en original_filename.
+    const downloadName = file.fileType === 'compressed'
+      ? `compressed_${file.originalFilename}`
+      : file.originalFilename;
+
+    res.download(file.filePath, downloadName);
   } catch (error) {
     next(error);
   }

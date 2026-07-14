@@ -25,4 +25,9 @@ export const config = {
     outputDir: process.env.OUTPUT_DIR || './outputs',
     fileExpiryHours: parseInt(process.env.FILE_EXPIRY_HOURS || '24', 10),
   },
+
+  // Clave de administrador que protege el módulo de certificados (solo TI).
+  // Sin valor por defecto a propósito: el middleware falla cerrado si no está
+  // configurada, para no exponer la emisión de identidades digitales.
+  adminKey: process.env.CERT_ADMIN_KEY || '',
 };
