@@ -76,26 +76,63 @@ mysql -u root -p comprepdf < database/schema.sql
 - `backend/src/controllers/` - API route handlers
 - `backend/src/services/` - Business logic
 - `backend/src/models/` - TypeORM entities for MySQL
-- `python-worker/app/compression/` - PDF compression logic (Ghostscript wrapper)
-- `python-worker/app/workers/` - Celery tasks
-- `frontend/src/app/features/` - Angular feature modules
-- `frontend/src/app/core/services/` - Singleton services (API, compression)
+- `python-worker/app/operations/` - operation handlers (compress, pdf_ops, sign, certificate)
+- `python-worker/app/workers/poller.py` - MySQL polling loop (claims & dispatches jobs)
+- `frontend/src/app/features/` - Angular feature modules (login, tools, jobs, users, …)
+- `frontend/src/app/core/` - singleton services, guards, interceptors (auth, API)
+
+## Authentication & ownership
+
+Every route requires a JWT (`Authorization: Bearer <token>`) **except three public
+routes**: `GET /api/v1/health`, `POST /api/v1/auth/login` and
+`POST /api/v1/auth/register`. Enforcement is centralized in `routes/index.ts`
+(`router.use(requireAuth)` after the public routes); `requireRole('admin')` guards
+the admin-only routes.
+
+- JWT HS256, 8h expiry, `JWT_SECRET` env (fail-closed: no secret → login blocked).
+  Payload `{ sub: userId, rol }`. Roles: `admin` and `user`.
+- Jobs are owned (`compression_jobs.user_id`): a user only sees/downloads/deletes
+  **their own** jobs — someone else's or an orphan (`user_id NULL`) returns **404**
+  (not 403, to avoid revealing existence). Admin sees all.
+- Downloads require the auth header, so the frontend fetches them as a **blob**
+  (no direct `<a href>`).
+- The certificate module requires role `admin` (the old `X-Admin-Key` was removed).
+- Self-registration creates users in `estado='pendiente'` (login blocked) restricted
+  to the `ALLOWED_SIGNUP_DOMAIN` email domain; an admin activates them via `PATCH`.
+- First admin is seeded at backend startup from `ADMIN_INITIAL_PASSWORD`
+  (with `must_change_password`); see `models/user.model.ts` `seedInitialAdmin`.
 
 ## API Endpoints
 
 ```
+# Auth (login/register are public; the rest need a token)
+POST   /api/v1/auth/login            # { username, password } -> { token, user }
+POST   /api/v1/auth/register         # self-registration (domain-restricted) -> pending user
+GET    /api/v1/auth/me               # current user profile
+POST   /api/v1/auth/change-password  # change own password
+
+# Users (admin only; no physical delete — baja = estado 'inactivo')
+GET    /api/v1/users                 # list users
+POST   /api/v1/users                 # create user (returns one-time temp password)
+PATCH  /api/v1/users/:id             # edit rol/estado (activate pending) / reset password
+
+# PDF operations (create a job owned by the caller)
 POST   /api/v1/compress              # Upload and compress PDF
 POST   /api/v1/pdf/split             # Split into pages/ranges (returns a ZIP)
-POST   /api/v1/pdf/merge             # Merge multiple PDFs (field: files[])
-POST   /api/v1/pdf/sign              # Digital signature (fields: file, cert .pfx; body: password)
+POST   /api/v1/pdf/merge             # Merge multiple PDFs (field: files[]; optional pageRanges[] per file)
+POST   /api/v1/pdf/sign              # Sign: mode certificate (.pfx) | drawn (image) | combined
 POST   /api/v1/pdf/extract           # Extract pages (body: pages, e.g. "1-3,5")
 POST   /api/v1/pdf/rotate            # Rotate pages (body: degrees, pages)
 POST   /api/v1/pdf/protect           # Add password (body: password)
 POST   /api/v1/pdf/unlock            # Remove password (body: password)
-GET    /api/v1/jobs/:jobId           # Get job status (any operation)
-GET    /api/v1/jobs/:jobId/download  # Download result (any operation)
-DELETE /api/v1/jobs/:jobId           # Delete job
-GET    /api/v1/health                # Health check
+POST   /api/v1/certificates          # (admin) Issue internal .pfx certificate
+
+# Jobs
+GET    /api/v1/jobs                  # my jobs, paginated (admin: ?all=true adds username)
+GET    /api/v1/jobs/:jobId           # Get job status (owner or admin, else 404)
+GET    /api/v1/jobs/:jobId/download  # Download result (owner or admin; blob, needs token)
+DELETE /api/v1/jobs/:jobId           # Delete job (owner or admin)
+GET    /api/v1/health                # Health check (public)
 ```
 
 New operations follow one pattern: controller inserts a `compression_jobs` row
