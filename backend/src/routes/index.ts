@@ -2,7 +2,7 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { compressPdf, getJobStatus, downloadFile, deleteJob } from '../controllers/compress.controller';
 import { listJobs } from '../controllers/jobs.controller';
-import { login, me, changePassword } from '../controllers/auth.controller';
+import { login, register, me, changePassword } from '../controllers/auth.controller';
 import { requireAuth, requireRole } from '../middlewares/auth.middleware';
 import {
   splitPdf, mergePdfs, signPdf, extractPages,
@@ -18,9 +18,10 @@ const router = Router();
 
 // ---------------------------------------------------------------------------
 // RUTAS PÚBLICAS (sin JWT). Deben ir ANTES del `router.use(requireAuth)` global.
-// Estas dos son la lista DEFINITIVA de rutas públicas del backend:
+// Estas son la lista DEFINITIVA de rutas públicas del backend:
 //   - GET  /health
 //   - POST /auth/login
+//   - POST /auth/register
 // ---------------------------------------------------------------------------
 
 // Health check
@@ -42,6 +43,20 @@ const loginLimiter = rateLimit({
   },
 });
 router.post('/auth/login', loginLimiter, login);
+
+// Autorregistro público (dominio corporativo restringido). Rate-limit por IP
+// para frenar creación masiva de cuentas: 5 registros / 15 min.
+const registerLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 5, // 5 registros por IP y ventana
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: { message: 'Too many registration attempts, please try again later' },
+  },
+});
+router.post('/auth/register', registerLimiter, register);
 
 // ---------------------------------------------------------------------------
 // ENFORCEMENT GLOBAL (Fase 3): a partir de aquí TODA ruta exige un JWT válido.

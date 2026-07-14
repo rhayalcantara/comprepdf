@@ -25,10 +25,20 @@ y cada usuario solo debe poder ver/descargar/borrar **sus propios trabajos**.
 ### Fuera de alcance (v1)
 - Login con Active Directory / LDAP (v2 — la tabla `users` deja el campo
   `auth_provider` preparado para eso).
-- Autorregistro público (los usuarios los crea TI/admin; es una herramienta interna).
 - Refresh tokens con rotación / revocación en Redis (v2; en v1 el JWT expira y
   se vuelve a hacer login).
 - Cuotas o límites por usuario.
+
+### Dentro de alcance (añadido) — Autorregistro con activación por admin
+- Endpoint **público** `POST /auth/register` restringido al dominio de correo
+  `coopaspire.com.do` (configurable por env `ALLOWED_SIGNUP_DOMAIN`).
+- El usuario elige su propia contraseña (no hay contraseña temporal ni
+  `must_change_password` en este flujo).
+- La cuenta nace con un **tercer estado** `estado='pendiente'` y NO puede iniciar
+  sesión hasta que un admin la pase a `activo` (`PATCH /users/:id`). Solo
+  `estado='activo'` puede loguearse; `pendiente`/`inactivo` reciben 403 tras
+  validar la contraseña. (Antes el autorregistro estaba fuera de alcance; se
+  reintrodujo a propósito con este flujo de activación manual.)
 
 ---
 

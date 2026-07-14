@@ -12,7 +12,7 @@ import { config } from '../config/env';
 import { logger } from '../utils/logger';
 
 export type UserRole = 'admin' | 'user';
-export type UserStatus = 'activo' | 'inactivo';
+export type UserStatus = 'activo' | 'inactivo' | 'pendiente';
 export type AuthProvider = 'local' | 'ad';
 
 /** Coste bcrypt usado en todo el proyecto para hashear contraseñas. */
@@ -44,7 +44,7 @@ export class User {
   @Column({ type: 'enum', enum: ['admin', 'user'], default: 'user' })
   rol!: UserRole;
 
-  @Column({ type: 'enum', enum: ['activo', 'inactivo'], default: 'activo' })
+  @Column({ type: 'enum', enum: ['activo', 'inactivo', 'pendiente'], default: 'activo' })
   estado!: UserStatus;
 
   @Column({ name: 'auth_provider', type: 'enum', enum: ['local', 'ad'], default: 'local' })
@@ -126,6 +126,10 @@ export class UserModel {
 
   static findByUsername(username: string): Promise<User | null> {
     return this.repo().findOne({ where: { username } });
+  }
+
+  static findByEmail(email: string): Promise<User | null> {
+    return this.repo().findOne({ where: { email } });
   }
 
   static findById(id: string): Promise<User | null> {

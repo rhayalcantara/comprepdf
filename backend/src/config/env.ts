@@ -38,4 +38,9 @@ export const config = {
   // Contraseña temporal del primer admin. El backend siembra el usuario `admin`
   // en el arranque solo si esta variable está definida (con must_change_password).
   adminInitialPassword: process.env.ADMIN_INITIAL_PASSWORD || '',
+
+  // Dominio de correo permitido para el autorregistro público (POST /auth/register).
+  // Solo se aceptan correos que terminen en `@${allowedSignupDomain}`. Por defecto
+  // el dominio corporativo de la cooperativa.
+  allowedSignupDomain: process.env.ALLOWED_SIGNUP_DOMAIN || 'coopaspire.com.do',
 };

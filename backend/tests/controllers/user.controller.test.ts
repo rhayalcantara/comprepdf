@@ -177,6 +177,39 @@ describe('user.controller', () => {
       expect(updateSpy).toHaveBeenCalledWith('user-2', { rol: 'admin', estado: 'inactivo' });
     });
 
+    it('activa un usuario pendiente (estado="activo") -> 200', async () => {
+      const updateSpy = jest
+        .spyOn(UserModel, 'update')
+        .mockResolvedValue(fakeUser({ id: 'user-2', estado: 'activo' }));
+
+      const req = {
+        params: { id: 'user-2' },
+        user: { id: 'admin-9', rol: 'admin' },
+        body: { estado: 'activo' },
+      } as unknown as Request;
+      await updateUser(req, mockResponse as Response, mockNext);
+
+      expect(nextError()).toBeUndefined();
+      expect(updateSpy).toHaveBeenCalledWith('user-2', { estado: 'activo' });
+      expect(payload().data.user.estado).toBe('activo');
+    });
+
+    it('acepta estado="pendiente" como válido', async () => {
+      const updateSpy = jest
+        .spyOn(UserModel, 'update')
+        .mockResolvedValue(fakeUser({ id: 'user-2', estado: 'pendiente' }));
+
+      const req = {
+        params: { id: 'user-2' },
+        user: { id: 'admin-9', rol: 'admin' },
+        body: { estado: 'pendiente' },
+      } as unknown as Request;
+      await updateUser(req, mockResponse as Response, mockNext);
+
+      expect(nextError()).toBeUndefined();
+      expect(updateSpy).toHaveBeenCalledWith('user-2', { estado: 'pendiente' });
+    });
+
     it('anti-lockout: el admin NO puede cambiar su propio rol -> 400 y no actualiza', async () => {
       const updateSpy = jest.spyOn(UserModel, 'update');
       const req = {

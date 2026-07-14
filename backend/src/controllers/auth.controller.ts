@@ -58,8 +58,16 @@ export const login = async (
       throw new UnauthorizedError('Invalid credentials');
     }
 
-    if (user.estado === 'inactivo') {
-      throw new ForbiddenError('User is inactive');
+    // Solo los usuarios 'activo' pueden iniciar sesión. El estado se revela SOLO
+    // tras validar la contraseña correctamente, de modo que no filtra la
+    // existencia del usuario a quien no conoce su contraseña.
+    if (user.estado === 'pendiente') {
+      throw new ForbiddenError(
+        'Tu cuenta está pendiente de activación por un administrador.',
+      );
+    }
+    if (user.estado !== 'activo') {
+      throw new ForbiddenError('Tu cuenta está inactiva.');
     }
 
     const payload: JwtPayload = { sub: user.id, rol: user.rol };
@@ -74,6 +82,86 @@ export const login = async (
       data: {
         token,
         user: toSafeUser(user),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /auth/register  { username, nombre, email, password } (PÚBLICO)
+ *
+ * Autorregistro público restringido al dominio corporativo
+ * (`config.allowedSignupDomain`, por defecto `coopaspire.com.do`). El usuario
+ * elige su propia contraseña; la cuenta nace `estado='pendiente'` y NO puede
+ * iniciar sesión hasta que un admin la pase a `activo`.
+ *
+ * - No hay auto-login: NO se devuelve token ni el usuario (minimiza información).
+ * - Errores de validación son 400 con mensaje en español.
+ */
+export const register = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const { username, nombre, email, password } = req.body as {
+      username?: string;
+      nombre?: string;
+      email?: string;
+      password?: string;
+    };
+
+    if (!username || !username.trim()) {
+      throw new ValidationError('El usuario es obligatorio.');
+    }
+    if (!nombre || !nombre.trim()) {
+      throw new ValidationError('El nombre es obligatorio.');
+    }
+    if (!email || !email.trim()) {
+      throw new ValidationError('El correo es obligatorio.');
+    }
+    if (!password || password.length < 8) {
+      throw new ValidationError('La contraseña debe tener al menos 8 caracteres.');
+    }
+
+    const domain = config.allowedSignupDomain;
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail.endsWith(`@${domain.toLowerCase()}`)) {
+      throw new ValidationError(
+        `El correo debe pertenecer al dominio ${domain}`,
+      );
+    }
+
+    const cleanUsername = username.trim();
+    const existingByUsername = await UserModel.findByUsername(cleanUsername);
+    if (existingByUsername) {
+      throw new ValidationError('El usuario ya existe');
+    }
+
+    const existingByEmail = await UserModel.findByEmail(normalizedEmail);
+    if (existingByEmail) {
+      throw new ValidationError('El correo ya está registrado');
+    }
+
+    const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
+    await UserModel.create({
+      username: cleanUsername,
+      nombre: nombre.trim(),
+      email: normalizedEmail,
+      passwordHash,
+      rol: 'user',
+      estado: 'pendiente',
+      authProvider: 'local',
+      mustChangePassword: false,
+    });
+
+    res.status(201).json({
+      success: true,
+      data: {
+        message:
+          'Cuenta creada. Un administrador debe activarla antes de que puedas iniciar sesión.',
       },
     });
   } catch (error) {

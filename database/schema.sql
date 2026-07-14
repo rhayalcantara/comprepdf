@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
     nombre        VARCHAR(255) NOT NULL,
     password_hash VARCHAR(100) NOT NULL,
     rol           ENUM('admin','user') NOT NULL DEFAULT 'user',
-    estado        ENUM('activo','inactivo') NOT NULL DEFAULT 'activo',
+    estado        ENUM('activo','inactivo','pendiente') NOT NULL DEFAULT 'activo',
     auth_provider ENUM('local','ad') NOT NULL DEFAULT 'local',
     must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
     last_login_at TIMESTAMP NULL,

@@ -15,7 +15,7 @@ import {
 } from '../utils/errors';
 
 const VALID_ROLES: UserRole[] = ['admin', 'user'];
-const VALID_STATUSES: UserStatus[] = ['activo', 'inactivo'];
+const VALID_STATUSES: UserStatus[] = ['activo', 'inactivo', 'pendiente'];
 const MIN_PASSWORD_LENGTH = 8;
 
 /**
@@ -160,7 +160,7 @@ export const updateUser = async (
       throw new ValidationError("rol must be 'admin' or 'user'");
     }
     if (estado !== undefined && !VALID_STATUSES.includes(estado as UserStatus)) {
-      throw new ValidationError("estado must be 'activo' or 'inactivo'");
+      throw new ValidationError("estado must be 'activo', 'inactivo' or 'pendiente'");
     }
     if (newPassword !== undefined && newPassword.length < MIN_PASSWORD_LENGTH) {
       throw new ValidationError(

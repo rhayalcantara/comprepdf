@@ -6,6 +6,7 @@ jest.mock('../../src/config/env', () => ({
   config: {
     jwt: { secret: 'test-secret', expiresIn: '8h' },
     adminInitialPassword: '',
+    allowedSignupDomain: 'coopaspire.com.do',
   },
 }));
 jest.mock('../../src/utils/logger', () => ({
@@ -16,7 +17,7 @@ jest.mock('../../src/config/database', () => ({
   AppDataSource: { getRepository: jest.fn() },
 }));
 
-import { login, changePassword } from '../../src/controllers/auth.controller';
+import { login, register, changePassword } from '../../src/controllers/auth.controller';
 import { config } from '../../src/config/env';
 import { UserModel, User } from '../../src/models/user.model';
 import {
@@ -133,6 +134,39 @@ describe('auth.controller', () => {
       expect(err.statusCode).toBe(403);
     });
 
+    it('usuario pendiente -> 403 con mensaje de activación (tras validar la contraseña)', async () => {
+      jest
+        .spyOn(UserModel, 'findByUsername')
+        .mockResolvedValue(fakeUser({ estado: 'pendiente' }));
+      jest.spyOn(bcrypt, 'compare').mockResolvedValue(true as never);
+
+      mockRequest = { body: { username: 'jdoe', password: 'good-pass' } };
+
+      await login(mockRequest as Request, mockResponse as Response, mockNext);
+
+      const err = nextError();
+      expect(err).toBeInstanceOf(ForbiddenError);
+      expect(err.statusCode).toBe(403);
+      expect(err.message).toBe(
+        'Tu cuenta está pendiente de activación por un administrador.',
+      );
+    });
+
+    it('usuario inactivo -> 403 con mensaje de cuenta inactiva', async () => {
+      jest
+        .spyOn(UserModel, 'findByUsername')
+        .mockResolvedValue(fakeUser({ estado: 'inactivo' }));
+      jest.spyOn(bcrypt, 'compare').mockResolvedValue(true as never);
+
+      mockRequest = { body: { username: 'jdoe', password: 'good-pass' } };
+
+      await login(mockRequest as Request, mockResponse as Response, mockNext);
+
+      const err = nextError();
+      expect(err).toBeInstanceOf(ForbiddenError);
+      expect(err.message).toBe('Tu cuenta está inactiva.');
+    });
+
     it('faltan credenciales -> 400 ValidationError', async () => {
       mockRequest = { body: { username: 'jdoe' } };
 
@@ -152,6 +186,115 @@ describe('auth.controller', () => {
       expect(statusMock).toHaveBeenCalledWith(503);
       expect(findSpy).not.toHaveBeenCalled();
       expect(mockNext).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('register', () => {
+    const validBody = {
+      username: 'nuevo',
+      nombre: 'Nuevo Usuario',
+      email: 'nuevo@coopaspire.com.do',
+      password: 'una-clave-segura',
+    };
+
+    it('caso feliz: crea usuario pendiente (rol user, sin token) y responde 201', async () => {
+      jest.spyOn(UserModel, 'findByUsername').mockResolvedValue(null);
+      jest.spyOn(UserModel, 'findByEmail').mockResolvedValue(null);
+      jest.spyOn(bcrypt, 'hash').mockResolvedValue('$2a$12$newhash' as never);
+      const createSpy = jest
+        .spyOn(UserModel, 'create')
+        .mockImplementation(async (input) => fakeUser({ ...input, id: 'new-1' } as Partial<User>));
+
+      mockRequest = { body: { ...validBody } };
+
+      await register(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(mockNext).not.toHaveBeenCalled();
+      expect(statusMock).toHaveBeenCalledWith(201);
+
+      const createArg = createSpy.mock.calls[0][0];
+      expect(createArg.estado).toBe('pendiente');
+      expect(createArg.rol).toBe('user');
+      expect(createArg.mustChangePassword).toBe(false);
+      expect(createArg.authProvider).toBe('local');
+      expect(createArg.email).toBe('nuevo@coopaspire.com.do');
+      // bcrypt cost 12
+      expect((bcrypt.hash as unknown as jest.Mock).mock.calls[0][1]).toBe(12);
+
+      const data = jsonMock.mock.calls[0][0].data;
+      expect(data.message).toBe(
+        'Cuenta creada. Un administrador debe activarla antes de que puedas iniciar sesión.',
+      );
+      // No auto-login: nunca devuelve token ni el usuario.
+      expect(data.token).toBeUndefined();
+      expect(data.user).toBeUndefined();
+    });
+
+    it('normaliza el email a minúsculas antes de guardarlo y comprobar unicidad', async () => {
+      const findByEmail = jest.spyOn(UserModel, 'findByEmail').mockResolvedValue(null);
+      jest.spyOn(UserModel, 'findByUsername').mockResolvedValue(null);
+      jest.spyOn(bcrypt, 'hash').mockResolvedValue('$2a$12$newhash' as never);
+      const createSpy = jest
+        .spyOn(UserModel, 'create')
+        .mockImplementation(async (input) => fakeUser({ ...input, id: 'new-1' } as Partial<User>));
+
+      mockRequest = { body: { ...validBody, email: 'Nuevo@CoopAspire.com.do' } };
+
+      await register(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(findByEmail).toHaveBeenCalledWith('nuevo@coopaspire.com.do');
+      expect(createSpy.mock.calls[0][0].email).toBe('nuevo@coopaspire.com.do');
+    });
+
+    it('dominio no permitido -> 400 con mensaje claro', async () => {
+      const createSpy = jest.spyOn(UserModel, 'create');
+      mockRequest = { body: { ...validBody, email: 'nuevo@gmail.com' } };
+
+      await register(mockRequest as Request, mockResponse as Response, mockNext);
+
+      const err = nextError();
+      expect(err).toBeInstanceOf(ValidationError);
+      expect(err.message).toBe('El correo debe pertenecer al dominio coopaspire.com.do');
+      expect(createSpy).not.toHaveBeenCalled();
+    });
+
+    it('contraseña demasiado corta -> 400', async () => {
+      mockRequest = { body: { ...validBody, password: 'corta' } };
+      await register(mockRequest as Request, mockResponse as Response, mockNext);
+      expect(nextError()).toBeInstanceOf(ValidationError);
+    });
+
+    it('username duplicado -> 400 "El usuario ya existe"', async () => {
+      jest.spyOn(UserModel, 'findByUsername').mockResolvedValue(fakeUser());
+      const createSpy = jest.spyOn(UserModel, 'create');
+
+      mockRequest = { body: { ...validBody } };
+      await register(mockRequest as Request, mockResponse as Response, mockNext);
+
+      const err = nextError();
+      expect(err).toBeInstanceOf(ValidationError);
+      expect(err.message).toBe('El usuario ya existe');
+      expect(createSpy).not.toHaveBeenCalled();
+    });
+
+    it('email duplicado -> 400 "El correo ya está registrado"', async () => {
+      jest.spyOn(UserModel, 'findByUsername').mockResolvedValue(null);
+      jest.spyOn(UserModel, 'findByEmail').mockResolvedValue(fakeUser({ id: 'other' }));
+      const createSpy = jest.spyOn(UserModel, 'create');
+
+      mockRequest = { body: { ...validBody } };
+      await register(mockRequest as Request, mockResponse as Response, mockNext);
+
+      const err = nextError();
+      expect(err).toBeInstanceOf(ValidationError);
+      expect(err.message).toBe('El correo ya está registrado');
+      expect(createSpy).not.toHaveBeenCalled();
+    });
+
+    it('faltan campos obligatorios -> 400', async () => {
+      mockRequest = { body: { username: 'x' } };
+      await register(mockRequest as Request, mockResponse as Response, mockNext);
+      expect(nextError()).toBeInstanceOf(ValidationError);
     });
   });
 
