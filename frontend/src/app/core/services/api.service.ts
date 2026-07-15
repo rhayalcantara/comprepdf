@@ -234,6 +234,42 @@ export interface UpdateUserPayload {
   newPassword?: string;
 }
 
+// --- Gestor de formularios PDF rellenables ---
+
+export type FormPageSize = 'letter' | 'a4';
+export type FormQuestionType =
+  | 'short_text' | 'long_text' | 'number' | 'date' | 'checkbox' | 'radio' | 'select';
+
+export interface FormQuestion {
+  id: string;
+  name: string;
+  type: FormQuestionType;
+  label: string;
+  help_text: string;
+  required: boolean;
+  options: string[];
+}
+
+export interface FormDefinition {
+  id: string;
+  name: string;
+  description: string;
+  page_size: FormPageSize;
+  header: { title: string; subtitle: string };
+  footer: { text: string; show_page_numbers: boolean };
+  questions: FormQuestion[];
+  version?: number;
+}
+
+/** Fila del listado de mantenimiento de formularios. */
+export interface FormSummary {
+  id: string;
+  name: string;
+  questionCount: number;
+  version: number;
+  updatedAt: string;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -429,5 +465,45 @@ export class ApiService {
 
   updateUser(id: string, payload: UpdateUserPayload): Observable<ApiResponse<{ user: SafeUser }>> {
     return this.http.patch<ApiResponse<{ user: SafeUser }>>(`${this.baseUrl}/users/${id}`, payload);
+  }
+
+  // --- Gestor de formularios PDF ---
+
+  /** Lista las definiciones del usuario (o todas si admin). */
+  listForms(): Observable<ApiResponse<FormSummary[]>> {
+    return this.http.get<ApiResponse<FormSummary[]>>(`${this.baseUrl}/forms`);
+  }
+
+  /** Carga una definición completa para editarla. */
+  getForm(id: string): Observable<ApiResponse<FormDefinition>> {
+    return this.http.get<ApiResponse<FormDefinition>>(`${this.baseUrl}/forms/${id}`);
+  }
+
+  createForm(definition: FormDefinition): Observable<ApiResponse<FormDefinition>> {
+    return this.http.post<ApiResponse<FormDefinition>>(`${this.baseUrl}/forms`, definition);
+  }
+
+  updateForm(definition: FormDefinition): Observable<ApiResponse<FormDefinition>> {
+    return this.http.put<ApiResponse<FormDefinition>>(`${this.baseUrl}/forms/${definition.id}`, definition);
+  }
+
+  deleteForm(id: string): Observable<ApiResponse<void>> {
+    return this.http.delete<ApiResponse<void>>(`${this.baseUrl}/forms/${id}`);
+  }
+
+  /**
+   * Genera el PDF de una definición GUARDADA. Crea un job `form_generate`; el
+   * PDF se descarga luego por /jobs/:jobId/download (flujo asíncrono estándar).
+   */
+  generateForm(id: string, outputName?: string): Observable<ApiResponse<JobResponse>> {
+    return this.http.post<ApiResponse<JobResponse>>(
+      `${this.baseUrl}/forms/${id}/generate`,
+      outputName ? { outputName } : {},
+    );
+  }
+
+  /** Vista previa: genera el PDF de la definición SIN persistirla (job efímero). */
+  previewForm(definition: FormDefinition): Observable<ApiResponse<JobResponse>> {
+    return this.http.post<ApiResponse<JobResponse>>(`${this.baseUrl}/forms/preview`, definition);
   }
 }

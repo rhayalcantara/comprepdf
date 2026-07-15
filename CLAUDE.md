@@ -127,6 +127,15 @@ POST   /api/v1/pdf/protect           # Add password (body: password)
 POST   /api/v1/pdf/unlock            # Remove password (body: password)
 POST   /api/v1/certificates          # (admin) Issue internal .pfx certificate
 
+# PDF forms (definiciones persistentes de formularios rellenables, con ownership)
+GET    /api/v1/forms                 # my form definitions (admin: all)
+POST   /api/v1/forms                 # create a form definition
+GET    /api/v1/forms/:id             # get a definition (owner or admin, else 404)
+PUT    /api/v1/forms/:id             # update a definition (bumps version)
+DELETE /api/v1/forms/:id             # delete a definition
+POST   /api/v1/forms/:id/generate    # generate the fillable PDF (creates a form_generate job)
+POST   /api/v1/forms/preview         # generate a PDF from a definition WITHOUT persisting it
+
 # Jobs
 GET    /api/v1/jobs                  # my jobs, paginated (admin: ?all=true adds username)
 GET    /api/v1/jobs/:jobId           # Get job status (owner or admin, else 404)
@@ -138,6 +147,13 @@ GET    /api/v1/health                # Health check (public)
 New operations follow one pattern: controller inserts a `compression_jobs` row
 (`operation_type` + `operation_params` JSON) and original file(s); the poller
 dispatches to `python-worker/app/operations/` and writes an `output` file row.
+
+**Form generation is the one exception with NO input file**: `form_generate`
+(handler `app/operations/form_generate.py`, reportlab-based) renders a fillable
+AcroForm PDF from `operation_params.definition`. Form definitions themselves are
+persistent (table `pdf_forms`, entity `PdfForm`, ownership like jobs) and edited
+via the `/forms` CRUD; only the actual PDF render goes through the job/poller
+flow. The Angular editor lives in `frontend/src/app/features/forms/`.
 
 All operations (including compress) accept an optional `outputName` body field:
 the user-chosen name for the result file (extension added automatically; for

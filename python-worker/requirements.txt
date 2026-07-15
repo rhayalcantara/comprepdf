@@ -3,6 +3,7 @@ uvicorn==0.24.0
 redis==5.0.1
 mysql-connector-python==8.2.0
 pikepdf==8.7.1
+reportlab==4.2.5
 pyHanko==0.25.1
 cryptography==49.0.0
 Pillow==10.1.0

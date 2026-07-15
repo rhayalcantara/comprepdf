@@ -41,6 +41,21 @@ export const routes: Routes = [
   },
   { path: 'tools', redirectTo: '', pathMatch: 'full' },
   {
+    path: 'formularios',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/forms/form-list.component').then(m => m.FormListComponent)
+  },
+  {
+    path: 'formularios/nuevo',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/forms/form-editor.component').then(m => m.FormEditorComponent)
+  },
+  {
+    path: 'formularios/:id/editar',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/forms/form-editor.component').then(m => m.FormEditorComponent)
+  },
+  {
     path: 'mis-trabajos',
     canActivate: [authGuard],
     loadComponent: () => import('./features/jobs/jobs.component').then(m => m.JobsComponent)

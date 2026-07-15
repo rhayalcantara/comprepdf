@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS compression_jobs (
     id VARCHAR(36) PRIMARY KEY,
     user_id VARCHAR(36) NULL,
     status ENUM('pending', 'processing', 'completed', 'failed') DEFAULT 'pending',
-    operation_type ENUM('compress', 'split', 'merge', 'sign', 'extract', 'rotate', 'protect', 'unlock', 'certificate') NOT NULL DEFAULT 'compress',
+    operation_type ENUM('compress', 'split', 'merge', 'sign', 'extract', 'rotate', 'protect', 'unlock', 'certificate', 'form_generate') NOT NULL DEFAULT 'compress',
     operation_params JSON NULL,
     compression_level ENUM('low', 'medium', 'high', 'custom') NULL,
     custom_dpi INT NULL,
@@ -62,6 +62,22 @@ CREATE TABLE IF NOT EXISTS files (
     FOREIGN KEY (job_id) REFERENCES compression_jobs(id) ON DELETE CASCADE,
     INDEX idx_job_id (job_id),
     INDEX idx_expires_at (expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Tabla de definiciones de formulario PDF (gestor de formularios rellenables).
+-- El PDF se genera bajo demanda con la operación de worker `form_generate`;
+-- aquí solo persisten las definiciones (borradores editables), con dueño.
+CREATE TABLE IF NOT EXISTS pdf_forms (
+    id         VARCHAR(36) PRIMARY KEY,
+    user_id    VARCHAR(36) NULL,
+    name       VARCHAR(120) NOT NULL,
+    payload    JSON NOT NULL,
+    version    INT NOT NULL DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_user_updated (user_id, updated_at),
+    INDEX idx_updated_at (updated_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Tabla de estadísticas de compresión

@@ -95,6 +95,16 @@ export const TOOL_CATALOG: ToolDef[] = [
     hueSoft: '#ecebfd',
     cta: 'Desbloquear PDF',
   },
+  {
+    id: 'forms',
+    route: '/formularios',
+    icon: 'dynamic_form',
+    title: 'Formularios',
+    description: 'Diseña y genera formularios PDF rellenables (AcroForm).',
+    hue: '#0d9488',
+    hueSoft: '#e0f5f2',
+    cta: 'Crear formulario',
+  },
 ];
 
 export function findTool(id: string): ToolDef | undefined {

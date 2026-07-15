@@ -1,0 +1,206 @@
+<div class="editor-toolbar">
+  <a class="back-link" routerLink="/formularios">← Formularios</a>
+  <div class="doc-status" aria-live="polite">
+    <span class="status-dot" [class.busy]="busy"></span>{{ statusMessage }}
+  </div>
+  <div class="toolbar-actions">
+    <button class="btn secondary" type="button" (click)="generatePreview()" [disabled]="busy">
+      Vista previa PDF
+    </button>
+    <button class="btn secondary" type="button" (click)="save()" [disabled]="busy">
+      Guardar borrador
+    </button>
+    <button class="btn primary" type="button" (click)="downloadPdf()" [disabled]="busy">
+      Descargar PDF
+    </button>
+  </div>
+</div>
+
+<main class="workspace">
+  <!-- Panel izquierdo: configuración del documento -->
+  <aside class="panel settings-panel">
+    <div class="panel-heading">
+      <p class="eyebrow">Documento</p>
+      <h2>Configuración</h2>
+    </div>
+
+    <label class="field">
+      <span>Nombre interno</span>
+      <input [(ngModel)]="definition.name" (ngModelChange)="markChanged()" />
+    </label>
+    <label class="field">
+      <span>Tamaño de página</span>
+      <select [(ngModel)]="definition.page_size" (ngModelChange)="markChanged()">
+        <option value="letter">Letter</option>
+        <option value="a4">A4</option>
+      </select>
+    </label>
+
+    <div class="section-divider"></div>
+    <p class="section-label">Encabezado</p>
+    <label class="field">
+      <span>Título visible</span>
+      <input [(ngModel)]="definition.header.title" (ngModelChange)="markChanged()" />
+    </label>
+    <label class="field">
+      <span>Texto secundario</span>
+      <textarea rows="3" [(ngModel)]="definition.header.subtitle" (ngModelChange)="markChanged()"></textarea>
+    </label>
+
+    <div class="section-divider"></div>
+    <p class="section-label">Pie de página</p>
+    <label class="field">
+      <span>Texto</span>
+      <input [(ngModel)]="definition.footer.text" (ngModelChange)="markChanged()" />
+    </label>
+    <label class="check-row">
+      <input type="checkbox" [(ngModel)]="definition.footer.show_page_numbers" (ngModelChange)="markChanged()" />
+      Mostrar número de página
+    </label>
+
+    <div class="section-divider"></div>
+    <p class="section-label">Agregar pregunta</p>
+    <div class="question-type-grid">
+      @for (type of questionTypes; track type.value) {
+        <button type="button" (click)="addQuestion(type.value)">
+          <span class="type-icon">+</span>{{ type.label }}
+        </button>
+      }
+    </div>
+  </aside>
+
+  <!-- Centro: lienzo con la maqueta del formulario -->
+  <section class="canvas-column">
+    @if (errorMessage) {
+      <div class="alert" role="alert">{{ errorMessage }}</div>
+    }
+
+    <div class="canvas-toolbar">
+      <div>
+        <p class="eyebrow">Composición</p>
+        <h1>{{ definition.name }}</h1>
+      </div>
+      <span>{{ definition.questions.length }} preguntas</span>
+    </div>
+
+    <article class="paper" [class.a4]="definition.page_size === 'a4'">
+      <header class="paper-header">
+        <p class="paper-kicker">Formulario</p>
+        <h2>{{ definition.header.title || 'Título del formulario' }}</h2>
+        <p>{{ definition.header.subtitle }}</p>
+      </header>
+
+      <div class="paper-body">
+        @for (question of definition.questions; track question.id; let index = $index) {
+          <button
+            class="question-card"
+            type="button"
+            [class.selected]="selectedQuestionId === question.id"
+            (click)="selectQuestion(question)"
+          >
+            <span class="question-number">{{ index + 1 }}</span>
+            <span class="question-content">
+              <span class="question-label">
+                {{ question.label }}
+                @if (question.required) { <em>*</em> }
+              </span>
+              @if (question.help_text) { <small>{{ question.help_text }}</small> }
+              @switch (question.type) {
+                @case ('long_text') { <span class="mock-input tall"></span> }
+                @case ('checkbox') { <span class="mock-choice"><i></i>Sí</span> }
+                @case ('radio') {
+                  <span class="mock-options">
+                    @for (option of question.options; track option) {
+                      <span class="mock-choice"><i class="radio"></i>{{ option }}</span>
+                    }
+                  </span>
+                }
+                @case ('select') { <span class="mock-input">Seleccione una opción <b>⌄</b></span> }
+                @default { <span class="mock-input"></span> }
+              }
+            </span>
+          </button>
+        } @empty {
+          <div class="empty-state">
+            <strong>El formulario está vacío</strong>
+            <span>Agrega una pregunta desde el panel izquierdo.</span>
+          </div>
+        }
+      </div>
+
+      <footer class="paper-footer">
+        <span>{{ definition.footer.text }}</span>
+        @if (definition.footer.show_page_numbers) { <span>Página 1</span> }
+      </footer>
+    </article>
+  </section>
+
+  <!-- Panel derecho: propiedades de la pregunta + PDF generado -->
+  <aside class="panel properties-panel">
+    @if (selectedQuestion; as question) {
+      <div class="panel-heading properties-heading">
+        <div>
+          <p class="eyebrow">Campo seleccionado</p>
+          <h2>Propiedades</h2>
+        </div>
+        <button class="icon-button danger" type="button" title="Eliminar" (click)="removeQuestion(question)">×</button>
+      </div>
+
+      <label class="field">
+        <span>Pregunta</span>
+        <textarea rows="3" [(ngModel)]="question.label" (ngModelChange)="markChanged()"></textarea>
+      </label>
+      <label class="field">
+        <span>Nombre interno</span>
+        <input [(ngModel)]="question.name" (ngModelChange)="markChanged()" />
+        <small>Se usa como identificador dentro del PDF.</small>
+      </label>
+      <label class="field">
+        <span>Tipo de respuesta</span>
+        <select [(ngModel)]="question.type" (ngModelChange)="changeQuestionType(question)">
+          @for (type of questionTypes; track type.value) {
+            <option [value]="type.value">{{ type.label }}</option>
+          }
+        </select>
+      </label>
+      <label class="field">
+        <span>Texto de ayuda</span>
+        <input [(ngModel)]="question.help_text" (ngModelChange)="markChanged()" placeholder="Opcional" />
+      </label>
+      @if (question.type === 'radio' || question.type === 'select') {
+        <label class="field">
+          <span>Opciones</span>
+          <textarea
+            rows="4"
+            [ngModel]="question.options.join(', ')"
+            (ngModelChange)="updateOptions(question, $event)"
+          ></textarea>
+          <small>Separa cada opción con una coma.</small>
+        </label>
+      }
+      <label class="check-row required-row">
+        <input type="checkbox" [(ngModel)]="question.required" (ngModelChange)="markChanged()" />
+        Respuesta obligatoria
+      </label>
+      <div class="order-actions">
+        <button type="button" (click)="moveQuestion(question, -1)">↑ Subir</button>
+        <button type="button" (click)="moveQuestion(question, 1)">↓ Bajar</button>
+      </div>
+    } @else {
+      <div class="empty-properties">
+        <strong>Selecciona una pregunta</strong>
+        <span>Sus propiedades aparecerán aquí.</span>
+      </div>
+    }
+
+    @if (pdfUrl) {
+      <div class="pdf-preview">
+        <div class="pdf-preview-heading">
+          <strong>PDF generado</strong>
+          <button type="button" (click)="downloadPdf()">Descargar</button>
+        </div>
+        <iframe [src]="pdfUrl" title="Vista previa del formulario PDF"></iframe>
+      </div>
+    }
+  </aside>
+</main>

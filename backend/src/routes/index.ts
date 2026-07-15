@@ -11,6 +11,9 @@ import {
 import { getOverview, getDailyStats, getRecentJobs, getOperationStats, getCompressionLevelStats } from '../controllers/stats.controller';
 import { issueCertificate, listCertificates } from '../controllers/certificate.controller';
 import { listUsers, createUser, updateUser } from '../controllers/user.controller';
+import {
+  listForms, getForm, createForm, updateForm, deleteForm, generateForm, previewForm,
+} from '../controllers/form.controller';
 import { upload, uploadMultiple, uploadSign, enforceSignatureSizeLimit } from '../middlewares/upload.middleware';
 import { validatePdfFile, validatePdfFiles, validateCompressionOptions, validateCertificateRequest } from '../middlewares/validation.middleware';
 
@@ -100,6 +103,18 @@ router.patch('/users/:id', requireRole('admin'), updateUser);
 // La emisión crea un job 'certificate'; el .pfx se descarga por /jobs/:jobId/download.
 router.post('/certificates', requireRole('admin'), validateCertificateRequest, issueCertificate);
 router.get('/certificates', requireRole('admin'), listCertificates);
+
+// Gestor de formularios PDF (definiciones persistentes con ownership).
+// La vista previa/generación crean un job `form_generate`; el PDF se descarga
+// por /jobs/:jobId/download (flujo asíncrono estándar). `/preview` va antes de
+// `/:id` para que "preview" no se interprete como un id.
+router.post('/forms/preview', previewForm);
+router.get('/forms', listForms);
+router.post('/forms', createForm);
+router.get('/forms/:id', getForm);
+router.put('/forms/:id', updateForm);
+router.delete('/forms/:id', deleteForm);
+router.post('/forms/:id/generate', generateForm);
 
 // Historial paginado del usuario ("Mis trabajos"); admin con ?all=true ve todo.
 router.get('/jobs', listJobs);

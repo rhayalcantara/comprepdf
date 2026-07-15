@@ -5,6 +5,7 @@ import { File } from '../models/file.model';
 import { CompressionStats } from '../models/stats.model';
 import { Certificate } from '../models/certificate.model';
 import { User } from '../models/user.model';
+import { PdfForm } from '../models/pdf-form.model';
 
 export const AppDataSource = new DataSource({
   type: 'mysql',
@@ -15,7 +16,7 @@ export const AppDataSource = new DataSource({
   database: config.mysql.database,
   synchronize: false,
   logging: config.nodeEnv === 'development',
-  entities: [CompressionJob, File, CompressionStats, Certificate, User],
+  entities: [CompressionJob, File, CompressionStats, Certificate, User, PdfForm],
   migrations: [],
   subscribers: [],
 });
