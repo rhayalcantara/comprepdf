@@ -12,7 +12,7 @@ from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.units import mm
 
 from app.config import settings
-from app.operations.form_generate import handle_form_generate, pack_rows
+from app.operations.form_generate import handle_form_generate, load_image, pack_rows
 
 USABLE_WIDTH = LETTER[0] - 2 * 18 * mm  # ancho de página menos los márgenes del renderer
 MARGIN_BOTTOM = 20 * mm
@@ -278,6 +278,128 @@ def test_radio_with_many_options_splits_across_pages(tmp_path):
     assert len({r[1] for r in rects}) >= 2, 'las 30 opciones deben repartirse en varias páginas'
     for name, page, _x0, y0, _x1, _y1 in rects:
         assert y0 >= MARGIN_BOTTOM, f'{name} (página {page}) se sale de la página'
+
+
+# --------------------------------------------------------------- imagenes
+
+
+def _png_data_uri(width=64, height=64, color=(200, 30, 40, 255)):
+    """PNG real generado al vuelo: load_image decodifica de verdad, no vale un
+    base64 cualquiera."""
+    import base64 as _b64
+    import io as _io
+
+    from PIL import Image as _Image
+
+    buffer = _io.BytesIO()
+    _Image.new('RGBA', (width, height), color).save(buffer, format='PNG')
+    return 'data:image/png;base64,' + _b64.b64encode(buffer.getvalue()).decode()
+
+
+def test_logo_is_drawn_top_right(tmp_path):
+    definition = _sectioned(_section(questions=[_q('nombre')]))
+    definition['header'] = {**definition['header'], 'logo': _png_data_uri(120, 40)}
+    cur, _ = _run(definition)
+
+    # El logo no es un campo: se comprueba que el PDF lleva una imagen (XObject)
+    # y que esta en la mitad derecha y arriba.
+    with pikepdf.open(cur.output_paths()[0]) as pdf:
+        page = pdf.pages[0]
+        xobjects = page.Resources.get('/XObject')
+        assert xobjects is not None, 'la pagina deberia tener una imagen'
+        imagenes = [xobjects[k] for k in xobjects.keys()
+                    if str(xobjects[k].get('/Subtype')) == '/Image']
+        assert len(imagenes) == 1
+        img = imagenes[0]
+        assert int(img.Width) == 120 and int(img.Height) == 40
+
+
+def test_logo_appears_on_every_page(tmp_path):
+    # La cabecera se repite en cada pagina; el logo tambien debe hacerlo.
+    definition = _sectioned(
+        _section(questions=[_q('nombre')]),
+        _section(page_break=True, questions=[_q('garante')]),
+    )
+    definition['header'] = {**definition['header'], 'logo': _png_data_uri()}
+    cur, _ = _run(definition)
+
+    with pikepdf.open(cur.output_paths()[0]) as pdf:
+        assert len(pdf.pages) == 2
+        for i, page in enumerate(pdf.pages):
+            xobjects = page.Resources.get('/XObject')
+            assert xobjects is not None, f'falta el logo en la pagina {i}'
+
+
+def test_logo_pushes_the_rule_below_it(tmp_path):
+    # Un logo alto baja el inicio del cuerpo: si no, la regla lo cruzaria.
+    sin_logo = _sectioned(_section(questions=[_q('nombre')]))
+    cur1, _ = _run(sin_logo)
+    y_sin = _by_name(cur1.output_paths()[0])['nombre'][3]
+
+    con_logo = _sectioned(_section(questions=[_q('nombre')]))
+    con_logo['header'] = {**con_logo['header'], 'logo': _png_data_uri(100, 100)}  # cuadrado -> alto
+    cur2, _ = _run(con_logo)
+    y_con = _by_name(cur2.output_paths()[0])['nombre'][3]
+
+    assert y_con < y_sin, 'con un logo alto el primer campo debe bajar'
+
+
+def test_question_icon_indents_the_label_but_not_the_field(tmp_path):
+    con_icono = _q('nombre', icon=_png_data_uri())
+    cur, _ = _run(_sectioned(_section(questions=[con_icono])))
+
+    fields = _by_name(cur.output_paths()[0])
+    # El campo NO se sangra: sigue empezando en el margen izquierdo.
+    assert abs(fields['nombre'][2] - 18 * mm) < 0.5
+    with pikepdf.open(cur.output_paths()[0]) as pdf:
+        xobjects = pdf.pages[0].Resources.get('/XObject')
+        assert xobjects is not None, 'el icono deberia estar dibujado'
+
+
+def test_icon_pushes_the_field_down(tmp_path):
+    sin = _run(_sectioned(_section(questions=[_q('nombre')])))[0]
+    con = _run(_sectioned(_section(questions=[_q('nombre', icon=_png_data_uri())])))[0]
+    y_sin = _by_name(sin.output_paths()[0])['nombre'][3]
+    y_con = _by_name(con.output_paths()[0])['nombre'][3]
+    # El icono (5mm) es mas alto que una etiqueta de una linea: el campo baja.
+    assert y_con < y_sin
+
+
+def test_broken_image_does_not_break_generation(tmp_path):
+    # Una imagen corrupta que se colara: el formulario debe salir igual, sin ella.
+    basura = 'data:image/png;base64,' + 'QUJD'  # base64 valido, PNG invalido
+    definition = _sectioned(_section(questions=[_q('nombre', icon=basura)]))
+    definition['header'] = {**definition['header'], 'logo': basura}
+    cur, result = _run(definition)
+
+    assert result['questions'] == 1
+    assert cur.output_paths()[0].read_bytes()[:5] == b'%PDF-'
+    with pikepdf.open(cur.output_paths()[0]) as pdf:
+        assert pdf.pages[0].Resources.get('/XObject') is None, 'no debe dibujar nada'
+
+
+def test_icon_measure_matches_draw_when_image_is_broken(tmp_path):
+    # Si medir y dibujar discreparan sobre si hay icono, la sangria descuadraria.
+    roto = _q('roto', icon='data:image/png;base64,QUJD')
+    sano = _q('sano')
+    cur, _ = _run(_sectioned(_section(columns=2, questions=[roto, sano])))
+    fields = _by_name(cur.output_paths()[0])
+    # Ninguno tiene icono utilizable -> misma altura de encabezado -> misma Y.
+    assert abs(fields['roto'][3] - fields['sano'][3]) < 0.5
+
+
+@pytest.mark.parametrize('valor', [
+    None, '', 'no-es-un-data-uri', 'https://ejemplo.com/x.png',
+    'data:text/html;base64,PGh0bWw+', 'data:image/png;base64,!!!no-base64!!!',
+])
+def test_load_image_rejects_garbage(valor):
+    assert load_image(valor) is None
+
+
+def test_load_image_accepts_a_real_png():
+    image = load_image(_png_data_uri(30, 20))
+    assert image is not None
+    assert (image.width, image.height) == (30, 20)
 
 
 @pytest.mark.parametrize('spans, columns, expected', [

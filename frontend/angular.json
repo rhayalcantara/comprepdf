@@ -37,14 +37,14 @@
             "production": {
               "budgets": [
                 { "type": "initial", "maximumWarning": "500kb", "maximumError": "1mb" },
-                { "type": "anyComponentStyle", "maximumWarning": "8kb", "maximumError": "12kb" }
+                { "type": "anyComponentStyle", "maximumWarning": "10kb", "maximumError": "12kb" }
               ],
               "outputHashing": "all"
             },
             "qa": {
               "budgets": [
                 { "type": "initial", "maximumWarning": "500kb", "maximumError": "1mb" },
-                { "type": "anyComponentStyle", "maximumWarning": "8kb", "maximumError": "12kb" }
+                { "type": "anyComponentStyle", "maximumWarning": "10kb", "maximumError": "12kb" }
               ],
               "outputHashing": "all",
               "fileReplacements": [

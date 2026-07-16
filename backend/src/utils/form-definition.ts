@@ -33,6 +33,20 @@ export const MAX_COLUMNS = 3;
 const MAX_SECTIONS = 20;
 const MAX_QUESTIONS = 100;
 
+/**
+ * Imágenes (logo del encabezado, iconos de las preguntas). Viajan dentro de la
+ * definición como data URI porque el payload ya va entero al worker; así no
+ * hacen falta subidas aparte ni entran en el borrado a 24h de `files`, que
+ * mataría un logo cuya definición es persistente.
+ *
+ * Los topes son sobre los bytes DECODIFICADOS y están para que el JSON no se
+ * dispare: el editor reescala antes de codificar, así que en la práctica no se
+ * rozan. Deben caber holgados bajo el límite de `express.json` (app.ts).
+ */
+const IMAGE_DATA_URI = /^data:image\/(png|jpeg);base64,([A-Za-z0-9+/]+={0,2})$/;
+const LOGO_MAX_BYTES = 400 * 1024;
+const ICON_MAX_BYTES = 120 * 1024;
+
 export interface FormQuestion {
   id?: string;
   name: string;
@@ -43,6 +57,8 @@ export interface FormQuestion {
   options: string[];
   /** Columnas que ocupa dentro de su sección (1..section.columns). */
   column_span: number;
+  /** Icono ilustrativo junto a la etiqueta, como data URI. '' si no tiene. */
+  icon: string;
 }
 
 export interface FormSection {
@@ -59,7 +75,7 @@ export interface FormDefinition {
   name: string;
   description: string;
   page_size: PageSize;
-  header: { title: string; subtitle: string };
+  header: { title: string; subtitle: string; logo: string };
   footer: { text: string; show_page_numbers: boolean };
   sections: FormSection[];
   /**
@@ -79,6 +95,39 @@ function asString(value: unknown): string {
 
 function asBool(value: unknown): boolean {
   return value === true || value === 'true';
+}
+
+/**
+ * Valida una imagen embebida como data URI y la devuelve normalizada (`''` si no
+ * hay). Comprueba los magic bytes del contenido decodificado, no solo el MIME
+ * que declara la cadena — mismo criterio que `assertIsSignatureImage` en
+ * `controllers/pdf-operation.controller.ts`.
+ */
+function validateImage(raw: unknown, field: string, maxBytes: number): string {
+  const value = asString(raw).trim();
+  if (!value) return '';
+
+  const match = IMAGE_DATA_URI.exec(value);
+  if (!match) {
+    throw new ValidationError(`${field} must be a PNG or JPEG image`);
+  }
+
+  const bytes = Buffer.from(match[2], 'base64');
+  const isPng = bytes.length > 8 && bytes[0] === 0x89 && bytes[1] === 0x50
+    && bytes[2] === 0x4e && bytes[3] === 0x47;
+  const isJpeg = bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8;
+  if (!(isPng || isJpeg)) {
+    throw new ValidationError(`${field} is not a valid PNG or JPEG image`);
+  }
+  if (match[1] === 'png' ? !isPng : !isJpeg) {
+    throw new ValidationError(`${field} content does not match its declared type`);
+  }
+  if (bytes.length > maxBytes) {
+    throw new ValidationError(
+      `${field} is too large (${Math.round(bytes.length / 1024)}KB; max ${Math.round(maxBytes / 1024)}KB)`,
+    );
+  }
+  return value;
 }
 
 /** Entero tolerante con strings numéricos. `undefined` si falta; `NaN` si no es entero. */
@@ -161,6 +210,7 @@ function validateQuestion(raw: unknown, index: number, maxColumns: number): Form
     required: asBool(q.required),
     options: OPTION_TYPES.includes(type) ? options : [],
     column_span: columnSpan,
+    icon: validateImage(q.icon, `Question "${name}" icon`, ICON_MAX_BYTES),
   };
 }
 
@@ -220,6 +270,7 @@ export function validateFormDefinition(raw: unknown): FormDefinition {
   const headerRaw = (body.header && typeof body.header === 'object' ? body.header : {}) as Record<string, unknown>;
   const title = requireLen(asString(headerRaw.title).trim(), 'Header title', 120, 1);
   const subtitle = requireLen(asString(headerRaw.subtitle).trim(), 'Header subtitle', 240);
+  const logo = validateImage(headerRaw.logo, 'Header logo', LOGO_MAX_BYTES);
 
   const footerRaw = (body.footer && typeof body.footer === 'object' ? body.footer : {}) as Record<string, unknown>;
   const footerText = requireLen(asString(footerRaw.text).trim(), 'Footer text', 160);
@@ -234,7 +285,10 @@ export function validateFormDefinition(raw: unknown): FormDefinition {
     ? validateSections(body.sections)
     : [wrapLegacyQuestions(body.questions)];
 
-  const questions = sections.flatMap((s) => s.questions);
+  // El espejo va SIN los iconos: su único consumidor es un worker anterior a las
+  // secciones, que no sabe dibujarlos, y duplicar los data URI doblaría el
+  // tamaño del payload y de cada `operation_params`.
+  const questions = sections.flatMap((s) => s.questions.map((q) => ({ ...q, icon: '' })));
 
   // Unicidad GLOBAL, no por sección: el AcroForm es plano y dos campos con el
   // mismo nombre se fusionan en uno con dos widgets (se escribe en uno y aparece
@@ -249,7 +303,7 @@ export function validateFormDefinition(raw: unknown): FormDefinition {
     name,
     description,
     page_size,
-    header: { title, subtitle },
+    header: { title, subtitle, logo },
     footer: { text: footerText, show_page_numbers: showPageNumbers },
     sections,
     questions,

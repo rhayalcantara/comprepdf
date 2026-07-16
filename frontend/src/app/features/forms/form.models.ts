@@ -18,6 +18,58 @@ export type {
 /** Máximo de columnas por sección. Espejo del backend y del worker. */
 export const MAX_COLUMNS = 3;
 
+/**
+ * Imágenes: se reescalan aquí antes de codificarlas, porque viajan dentro del
+ * JSON de la definición. Los topes de bytes son los del backend
+ * (`utils/form-definition.ts`); con estos tamaños no se rozan.
+ */
+export const LOGO_MAX_PX = 600;
+export const LOGO_MAX_BYTES = 400 * 1024;
+export const ICON_MAX_PX = 128;
+export const ICON_MAX_BYTES = 120 * 1024;
+
+/** Bytes que ocupará el data URI una vez decodificado. */
+export function dataUrlBytes(dataUrl: string): number {
+  const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+  const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
+  return Math.floor((base64.length * 3) / 4) - padding;
+}
+
+/**
+ * Lee una imagen y la devuelve como data URI, reescalada a `maxPx` en su lado
+ * mayor. Mantiene el formato de origen: PNG conserva la transparencia (un logo
+ * la necesita) y JPEG evita que una foto engorde al convertirla a PNG.
+ */
+export function readImageAsDataUrl(file: File, maxPx: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (file.type !== 'image/png' && file.type !== 'image/jpeg') {
+      reject(new Error('La imagen debe ser PNG o JPEG.'));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('No se pudo leer el archivo.'));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error('El archivo no es una imagen válida.'));
+      image.onload = () => {
+        const scale = Math.min(1, maxPx / Math.max(image.width, image.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(image.width * scale));
+        canvas.height = Math.max(1, Math.round(image.height * scale));
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('No se pudo procesar la imagen.'));
+          return;
+        }
+        ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL(file.type, 0.85));
+      };
+      image.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 /** crypto.randomUUID solo existe en contextos seguros (HTTPS/localhost); QA se sirve por HTTP. */
 export function newId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -52,6 +104,7 @@ export function createForm(): FormDefinition {
     header: {
       title: 'Solicitud de servicio',
       subtitle: 'Complete los campos indicados antes de enviar el documento.',
+      logo: '',
     },
     footer: {
       text: 'Información de uso interno',
@@ -97,6 +150,7 @@ export function createQuestion(
     required: false,
     options: type === 'radio' || type === 'select' ? ['Opción 1', 'Opción 2'] : [],
     column_span: 1,
+    icon: '',
   };
 }
 
@@ -120,7 +174,11 @@ export function normalizeDefinition(raw: FormDefinition): FormDefinition {
     ? raw.sections.map(normalizeSection)
     : [{ ...createSection(), questions: (raw.questions ?? []).map((q) => normalizeQuestion(q, 1)) }];
 
-  const definition: FormDefinition = { ...raw, sections };
+  const definition: FormDefinition = {
+    ...raw,
+    header: { ...raw.header, logo: raw.header?.logo ?? '' },
+    sections,
+  };
   delete definition.questions;
   return definition;
 }
@@ -144,5 +202,6 @@ function normalizeQuestion(question: FormQuestion, columns: number): FormQuestio
     id: question.id || newId(),
     options: question.options ?? [],
     column_span: Number.isFinite(span) && span >= 1 ? Math.min(span, columns) : 1,
+    icon: question.icon ?? '',
   };
 }

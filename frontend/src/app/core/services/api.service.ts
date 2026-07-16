@@ -252,6 +252,8 @@ export interface FormQuestion {
   options: string[];
   /** Columnas que ocupa dentro de su sección (1..section.columns). */
   column_span: number;
+  /** Icono ilustrativo junto a la etiqueta, como data URI. '' si no tiene. */
+  icon: string;
 }
 
 /** Grupo de preguntas con su etiqueta y su rejilla de columnas. */
@@ -270,7 +272,8 @@ export interface FormDefinition {
   name: string;
   description: string;
   page_size: FormPageSize;
-  header: { title: string; subtitle: string };
+  /** `logo`: imagen del encabezado como data URI ('' si no hay). */
+  header: { title: string; subtitle: string; logo: string };
   footer: { text: string; show_page_numbers: boolean };
   sections: FormSection[];
   /**

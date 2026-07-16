@@ -184,12 +184,45 @@
 }
 
 .paper-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
   border-bottom: 1px solid var(--line);
   padding-bottom: 1rem;
   margin-bottom: 1.25rem;
   .paper-kicker { text-transform: uppercase; letter-spacing: 0.1em; font-size: 0.68rem; color: var(--ink-soft); margin: 0; }
   h2 { font-size: 1.35rem; margin: 0.35rem 0 0.25rem; color: #14213d; }
   p { margin: 0; color: var(--ink-soft); font-size: 0.9rem; }
+}
+
+.paper-header-text { flex: 1; min-width: 0; }
+
+// Espejo del logo del PDF: arriba a la derecha, acotado por alto.
+.paper-logo { flex: 0 0 auto; max-height: 42px; max-width: 130px; object-fit: contain; }
+
+.question-head { display: flex; align-items: flex-start; gap: 0.35rem; }
+.question-head-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+.question-icon { flex: 0 0 auto; width: 14px; height: 14px; object-fit: contain; margin-top: 2px; }
+
+// Ranura de imagen del panel: miniatura + botón de quitar.
+.image-slot {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  img { max-height: 40px; max-width: 100%; object-fit: contain; }
+  &.icon-slot img { max-height: 24px; }
+}
+
+.file-drop {
+  display: block;
+  padding: 0.5rem;
+  cursor: pointer;
+  input { display: none; }
+  &:hover { border-color: var(--cobalt); color: var(--cobalt); }
 }
 
 .paper-body { display: flex; flex-direction: column; gap: 1.25rem; }
@@ -243,7 +276,15 @@
 }
 
 .page-break-hint,
-.section-empty { font-size: 0.78rem; color: var(--ink-soft); }
+.section-empty,
+.file-drop { font-size: 0.78rem; color: var(--ink-soft); }
+
+.section-empty,
+.file-drop {
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  text-align: center;
+}
 
 .page-break-hint {
   margin: 0 0 0.6rem;
@@ -255,9 +296,6 @@
   grid-column: 1 / -1;
   margin: 0;
   padding: 0.9rem;
-  border: 1px dashed var(--line);
-  border-radius: 10px;
-  text-align: center;
 }
 
 // Rejilla espejo de la del PDF: `grid-auto-flow: row` (el default) empaqueta

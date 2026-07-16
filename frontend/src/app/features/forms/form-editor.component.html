@@ -46,6 +46,21 @@
       <span>Texto secundario</span>
       <textarea rows="3" [(ngModel)]="definition.header.subtitle" (ngModelChange)="markChanged()"></textarea>
     </label>
+    <div class="field">
+      <span>Logo</span>
+      @if (definition.header.logo) {
+        <div class="image-slot">
+          <img [src]="definition.header.logo" alt="Logo del formulario" />
+          <button type="button" class="icon-button danger" title="Quitar logo" (click)="removeLogo()">×</button>
+        </div>
+      } @else {
+        <label class="file-drop">
+          <input type="file" accept="image/png,image/jpeg" (change)="pickLogo($event)" />
+          <span>+ Subir logo</span>
+        </label>
+        <small>PNG o JPEG. Aparece arriba a la derecha, en todas las páginas.</small>
+      }
+    </div>
 
     <div class="section-divider"></div>
     <p class="section-label">Pie de página</p>
@@ -88,9 +103,14 @@
 
     <article class="paper" [class.a4]="definition.page_size === 'a4'">
       <header class="paper-header">
-        <p class="paper-kicker">Formulario</p>
-        <h2>{{ definition.header.title || 'Título del formulario' }}</h2>
-        <p>{{ definition.header.subtitle }}</p>
+        <div class="paper-header-text">
+          <p class="paper-kicker">Formulario</p>
+          <h2>{{ definition.header.title || 'Título del formulario' }}</h2>
+          <p>{{ definition.header.subtitle }}</p>
+        </div>
+        @if (definition.header.logo) {
+          <img class="paper-logo" [src]="definition.header.logo" alt="Logo" />
+        }
       </header>
 
       <!-- cdkDropListGroup conecta las listas solas: gestionar connectedTo con
@@ -156,11 +176,20 @@
                 >
                   <span class="drag-handle" cdkDragHandle title="Arrastrar">⠿</span>
                   <span class="question-content">
-                    <span class="question-label">
-                      {{ question.label }}
-                      @if (question.required) { <em>*</em> }
+                    <!-- Espejo del PDF: el icono va a la izquierda y la etiqueta
+                         con su ayuda se sangran a su derecha. -->
+                    <span class="question-head">
+                      @if (question.icon) {
+                        <img class="question-icon" [src]="question.icon" alt="" />
+                      }
+                      <span class="question-head-text">
+                        <span class="question-label">
+                          {{ question.label }}
+                          @if (question.required) { <em>*</em> }
+                        </span>
+                        @if (question.help_text) { <small>{{ question.help_text }}</small> }
+                      </span>
                     </span>
-                    @if (question.help_text) { <small>{{ question.help_text }}</small> }
                     @switch (question.type) {
                       @case ('long_text') { <span class="mock-input tall"></span> }
                       @case ('checkbox') { <span class="mock-choice"><i></i>Sí</span> }
@@ -230,6 +259,21 @@
         <span>Texto de ayuda</span>
         <input [(ngModel)]="question.help_text" (ngModelChange)="markChanged()" placeholder="Opcional" />
       </label>
+      <div class="field">
+        <span>Icono</span>
+        @if (question.icon) {
+          <div class="image-slot icon-slot">
+            <img [src]="question.icon" alt="Icono de la pregunta" />
+            <button type="button" class="icon-button danger" title="Quitar icono" (click)="removeIcon(question)">×</button>
+          </div>
+        } @else {
+          <label class="file-drop">
+            <input type="file" accept="image/png,image/jpeg" (change)="pickIcon($event, question)" />
+            <span>+ Subir icono</span>
+          </label>
+          <small>Se muestra junto a la pregunta, en pequeño.</small>
+        }
+      </div>
       @if (question.type === 'radio' || question.type === 'select') {
         <label class="field">
           <span>Opciones</span>

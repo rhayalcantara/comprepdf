@@ -11,13 +11,19 @@ import {
   createForm,
   createQuestion,
   createSection,
+  dataUrlBytes,
   FormColumns,
   FormQuestion,
   FormQuestionType,
   FormSection,
+  ICON_MAX_BYTES,
+  ICON_MAX_PX,
+  LOGO_MAX_BYTES,
+  LOGO_MAX_PX,
   MAX_COLUMNS,
   normalizeDefinition,
   QUESTION_TYPES,
+  readImageAsDataUrl,
 } from './form.models';
 
 type PreviewDevice = 'desktop' | 'tablet' | 'mobile';
@@ -179,6 +185,58 @@ export class FormEditorComponent implements OnInit, OnDestroy {
       q.column_span = Math.min(q.column_span, section.columns);
     });
     this.markChanged();
+  }
+
+  // --- Imágenes (logo del encabezado, iconos de las preguntas) ---
+
+  /** Sube el logo del encabezado. Se reescala antes de guardarlo. */
+  pickLogo(event: Event): void {
+    void this.readImage(event, LOGO_MAX_PX, LOGO_MAX_BYTES, 'El logo', (dataUrl) => {
+      this.definition.header.logo = dataUrl;
+    });
+  }
+
+  removeLogo(): void {
+    this.definition.header.logo = '';
+    this.markChanged();
+  }
+
+  /** Sube el icono de la pregunta seleccionada. */
+  pickIcon(event: Event, question: FormQuestion): void {
+    void this.readImage(event, ICON_MAX_PX, ICON_MAX_BYTES, 'El icono', (dataUrl) => {
+      question.icon = dataUrl;
+    });
+  }
+
+  removeIcon(question: FormQuestion): void {
+    question.icon = '';
+    this.markChanged();
+  }
+
+  private async readImage(
+    event: Event,
+    maxPx: number,
+    maxBytes: number,
+    what: string,
+    apply: (dataUrl: string) => void,
+  ): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    // Limpiar el input: si no, elegir el mismo archivo dos veces no dispara change.
+    input.value = '';
+    if (!file) return;
+
+    try {
+      const dataUrl = await readImageAsDataUrl(file, maxPx);
+      if (dataUrlBytes(dataUrl) > maxBytes) {
+        this.errorMessage = `${what} sigue siendo demasiado pesado (máximo ${Math.round(maxBytes / 1024)}KB). Usa una imagen más sencilla.`;
+        return;
+      }
+      apply(dataUrl);
+      this.markChanged();
+    } catch (error) {
+      this.errorMessage = error instanceof Error ? error.message : `No se pudo cargar ${what.toLowerCase()}.`;
+    }
   }
 
   drop(event: CdkDragDrop<FormQuestion[]>): void {

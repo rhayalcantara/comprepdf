@@ -29,8 +29,11 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-// Body parsing
-app.use(express.json());
+// Body parsing. El límite por defecto de express.json son 100kb, insuficiente
+// para las definiciones de formulario: el logo y los iconos viajan dentro del
+// JSON como data URI. El tamaño de cada imagen se acota aparte, en
+// `utils/form-definition.ts`; esto es solo el techo del body.
+app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // Routes

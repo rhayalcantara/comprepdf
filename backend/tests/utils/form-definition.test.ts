@@ -259,3 +259,88 @@ describe('validateFormDefinition · secciones y columnas', () => {
     expect(def.sections).toHaveLength(1);
   });
 });
+
+// PNG de 1x1 real: los magic bytes se comprueban sobre el contenido decodificado,
+// así que no vale una cadena base64 cualquiera.
+const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+const JPEG_1PX = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==';
+
+describe('validateFormDefinition · logo e iconos', () => {
+  it('acepta un logo PNG en el encabezado', () => {
+    const raw = validRaw({ header: { title: 'X', subtitle: '', logo: PNG_1PX } });
+    expect(validateFormDefinition(raw).header.logo).toBe(PNG_1PX);
+  });
+
+  it('acepta un icono JPEG en una pregunta', () => {
+    const raw = withSections(section({ questions: [
+      { name: 'campo', type: 'short_text', label: 'X', help_text: '', required: false, options: [], icon: JPEG_1PX },
+    ] }));
+    expect(validateFormDefinition(raw).sections[0].questions[0].icon).toBe(JPEG_1PX);
+  });
+
+  it('sin logo ni icono quedan en cadena vacía', () => {
+    const def = validateFormDefinition(validRaw());
+    expect(def.header.logo).toBe('');
+    expect(def.questions[0].icon).toBe('');
+  });
+
+  // El espejo solo lo consume un worker antiguo, que no dibuja iconos: duplicar
+  // los data URI doblaría el payload y cada operation_params.
+  it('el espejo plano NO lleva los iconos', () => {
+    const raw = withSections(section({ questions: [
+      { name: 'campo', type: 'short_text', label: 'X', help_text: '', required: false, options: [], icon: PNG_1PX },
+    ] }));
+    const def = validateFormDefinition(raw);
+    expect(def.sections[0].questions[0].icon).toBe(PNG_1PX);
+    expect(def.questions[0].icon).toBe('');
+  });
+
+  it('sigue siendo idempotente con imágenes', () => {
+    const raw = validRaw({ header: { title: 'X', subtitle: '', logo: PNG_1PX } });
+    const once = validateFormDefinition(raw);
+    expect(validateFormDefinition(once)).toEqual(once);
+  });
+
+  it('rechaza un data URI que no es imagen', () => {
+    const raw = validRaw({ header: { title: 'X', subtitle: '', logo: 'data:text/html;base64,PGh0bWw+' } });
+    expect(() => validateFormDefinition(raw)).toThrow(/must be a PNG or JPEG/);
+  });
+
+  it('rechaza una URL en vez de un data URI', () => {
+    const raw = validRaw({ header: { title: 'X', subtitle: '', logo: 'https://ejemplo.com/logo.png' } });
+    expect(() => validateFormDefinition(raw)).toThrow(/must be a PNG or JPEG/);
+  });
+
+  // Declarar image/png no basta: se miran los magic bytes del contenido.
+  it('rechaza contenido que no coincide con el tipo declarado', () => {
+    const falso = 'data:image/png;base64,' + Buffer.from('esto no es un png').toString('base64');
+    const raw = validRaw({ header: { title: 'X', subtitle: '', logo: falso } });
+    expect(() => validateFormDefinition(raw)).toThrow(/not a valid PNG or JPEG/);
+  });
+
+  it('rechaza un JPEG disfrazado de PNG', () => {
+    const disfrazado = JPEG_1PX.replace('image/jpeg', 'image/png');
+    const raw = validRaw({ header: { title: 'X', subtitle: '', logo: disfrazado } });
+    expect(() => validateFormDefinition(raw)).toThrow(/does not match its declared type/);
+  });
+
+  it('rechaza un logo demasiado grande', () => {
+    const enorme = 'data:image/png;base64,' + Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.alloc(500 * 1024),
+    ]).toString('base64');
+    const raw = validRaw({ header: { title: 'X', subtitle: '', logo: enorme } });
+    expect(() => validateFormDefinition(raw)).toThrow(/too large/);
+  });
+
+  it('rechaza un icono demasiado grande', () => {
+    const enorme = 'data:image/png;base64,' + Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.alloc(200 * 1024),
+    ]).toString('base64');
+    const raw = withSections(section({ questions: [
+      { name: 'campo', type: 'short_text', label: 'X', help_text: '', required: false, options: [], icon: enorme },
+    ] }));
+    expect(() => validateFormDefinition(raw)).toThrow(/too large/);
+  });
+});

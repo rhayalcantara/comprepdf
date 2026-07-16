@@ -10,15 +10,19 @@ un número de columnas, y cada pregunta ocupa 1..N de esas columnas
 envuelven en una sección implícita de una columna y se renderizan igual que
 siempre.
 """
+import base64
 import io
 import re
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
+from PIL import Image, UnidentifiedImageError
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_LEFT
 from reportlab.lib.pagesizes import A4, LETTER
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
+from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfgen import canvas
 from reportlab.platypus import Paragraph
 
@@ -26,9 +30,14 @@ from app.operations.common import custom_basename, output_path, parse_params, re
 
 PAGE_SIZES = {'letter': LETTER, 'a4': A4}
 _SLUG = re.compile(r'[^a-z0-9]+')
+_DATA_URI = re.compile(r'^data:image/(png|jpeg);base64,(.+)$', re.DOTALL)
 
 # Espejo de MAX_COLUMNS en backend/src/utils/form-definition.ts.
 MAX_COLUMNS = 3
+
+# Tope de pixeles al decodificar: el backend acota los BYTES, pero un PNG de
+# pocos KB puede descomprimirse en una imagen gigantesca (bomba de descompresion).
+MAX_IMAGE_PX = 4000
 
 # Tipografía
 LABEL_SIZE = 10
@@ -48,7 +57,15 @@ FIELD_INK = '#101828'
 OPTION_INK = '#344054'
 DANGER = '#B42318'
 
+# Imágenes
+LOGO_MAX_W = 45 * mm
+LOGO_MAX_H = 14 * mm
+LOGO_GAP_BELOW = 4 * mm
+ICON_SIZE = 5 * mm
+ICON_GAP = 2 * mm
+
 # Layout
+TITLE_SIZE = 16
 GAP_AFTER_LABEL = 2 * mm
 GAP_AFTER_HELP = 2 * mm
 GAP_AFTER_FIELD = 7 * mm
@@ -68,6 +85,42 @@ def _slug(name: str) -> str:
     """Nombre de archivo seguro a partir del nombre del formulario."""
     base = _SLUG.sub('-', (name or '').lower()).strip('-')
     return base or 'formulario'
+
+
+def load_image(data_uri: Any) -> Optional[Image.Image]:
+    """Decodifica un data URI de imagen. `None` si no hay o si no es válida.
+
+    El backend ya valida y acota, pero el worker se defiende igual (mismo
+    criterio que `sign.py`): al PDF solo llegan los píxeles decodificados, nunca
+    los bytes originales, y una imagen rota nunca debe tumbar la generación —
+    como mucho, sale el formulario sin ella.
+    """
+    if not isinstance(data_uri, str) or not data_uri:
+        return None
+    match = _DATA_URI.match(data_uri.strip())
+    if not match:
+        return None
+    try:
+        raw = base64.b64decode(match.group(2), validate=True)
+    except (ValueError, TypeError):
+        return None
+    try:
+        with Image.open(io.BytesIO(raw)) as opened:
+            opened.load()
+            image = opened.convert('RGBA')
+    except Image.DecompressionBombError:
+        return None
+    except (UnidentifiedImageError, OSError, SyntaxError, ValueError):
+        return None
+    if image.width > MAX_IMAGE_PX or image.height > MAX_IMAGE_PX:
+        return None
+    return image
+
+
+def _fit(image: Image.Image, max_w: float, max_h: float) -> Tuple[float, float]:
+    """Tamaño de dibujo que cabe en (max_w, max_h) conservando la proporción."""
+    scale = min(max_w / image.width, max_h / image.height)
+    return image.width * scale, image.height * scale
 
 
 def sections_of(definition: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -154,6 +207,9 @@ class PdfFormRenderer:
         self.form = pdf.acroForm
         self.header = header
         self.footer = footer
+        # Se decodifica una vez: la cabecera se repite en cada página.
+        self.logo = load_image(header.get('logo'))
+        self._icon_cache: Dict[str, Optional[Image.Image]] = {}
         self.width, self.height = page_size
         self.page_number = 1
         self.y = self.height - self.margin_top
@@ -168,9 +224,29 @@ class PdfFormRenderer:
 
     # ------------------------------------------------------------------ página
 
+    def _draw_logo(self, title_baseline: float) -> Optional[float]:
+        """Dibuja el logo arriba a la derecha. Devuelve la Y de su borde inferior.
+
+        Se alinea por arriba con el título: `drawString` posiciona por la línea
+        base, así que el borde superior del texto es la base + el ascendente.
+        """
+        if self.logo is None:
+            return None
+        width, height = _fit(self.logo, LOGO_MAX_W, LOGO_MAX_H)
+        top = title_baseline + pdfmetrics.getAscent('Helvetica-Bold', TITLE_SIZE)
+        x = self.width - self.margin_x - width
+        self.pdf.drawImage(
+            ImageReader(self.logo), x, top - height, width=width, height=height,
+            mask='auto',   # respeta la transparencia del PNG
+        )
+        return top - height
+
     def _draw_header(self) -> None:
+        title_baseline = self.y
+        logo_bottom = self._draw_logo(title_baseline)
+
         self.pdf.setFillColor(colors.HexColor(NAVY))
-        self.pdf.setFont('Helvetica-Bold', 16)
+        self.pdf.setFont('Helvetica-Bold', TITLE_SIZE)
         self.pdf.drawString(self.margin_x, self.y, self.header.get('title') or 'Formulario')
         self.y -= 7 * mm
         subtitle = self.header.get('subtitle')
@@ -179,6 +255,12 @@ class PdfFormRenderer:
             self.pdf.setFont('Helvetica', 9)
             self.pdf.drawString(self.margin_x, self.y, subtitle)
             self.y -= 6 * mm
+
+        # La regla va por debajo de todo: si el logo baja más que el texto, la
+        # cruzaría por la mitad.
+        if logo_bottom is not None:
+            self.y = min(self.y, logo_bottom - LOGO_GAP_BELOW)
+
         self.pdf.setStrokeColor(colors.HexColor(RULE))
         self.pdf.line(self.margin_x, self.y, self.width - self.margin_x, self.y)
         self.y -= 8 * mm
@@ -275,13 +357,38 @@ class PdfFormRenderer:
 
     # ------------------------------------------------------------------ medida
 
+    def _icon_of(self, question: Dict[str, Any]) -> Optional[Image.Image]:
+        """Icono decodificado de la pregunta, cacheado.
+
+        Medir y dibujar tienen que coincidir en si hay icono: si uno reservara el
+        hueco y el otro no, la sangría descuadraría. Cachear la decodificación
+        garantiza que ambos reciban la misma respuesta (y un icono corrupto es
+        `None` en los dos).
+        """
+        uri = question.get('icon')
+        if not isinstance(uri, str) or not uri:
+            return None
+        if uri not in self._icon_cache:
+            self._icon_cache[uri] = load_image(uri)
+        return self._icon_cache[uri]
+
+    def _head_indent(self, question: Dict[str, Any]) -> float:
+        """Sangría que deja el icono a la izquierda de la etiqueta."""
+        return ICON_SIZE + ICON_GAP if self._icon_of(question) is not None else 0.0
+
     def _head_height(self, question: Dict[str, Any], width: float) -> float:
-        """Alto de la etiqueta + el texto de ayuda."""
-        height = self._text_height(self._label_markup(question), LABEL_SIZE, width)
+        """Alto de la etiqueta + el texto de ayuda (con su icono, si lo hay)."""
+        indent = self._head_indent(question)
+        text_width = width - indent
+        height = self._text_height(self._label_markup(question), LABEL_SIZE, text_width)
         height += GAP_AFTER_LABEL
         if question.get('help_text'):
-            height += self._text_height(question['help_text'], HELP_SIZE, width, MUTED)
+            height += self._text_height(question['help_text'], HELP_SIZE, text_width, MUTED)
             height += GAP_AFTER_HELP
+        if indent:
+            # Con una etiqueta de una línea el icono es más alto que el texto: el
+            # campo no puede subirse por encima de él.
+            height = max(height, ICON_SIZE + GAP_AFTER_LABEL)
         return height
 
     def _field_block_height(self, question: Dict[str, Any]) -> float:
@@ -328,12 +435,31 @@ class PdfFormRenderer:
 
     def _draw_question_head(self, question: Dict[str, Any], x: float, y_top: float,
                             width: float) -> float:
-        """Dibuja etiqueta + ayuda. Devuelve la Y donde empieza el control."""
-        y = y_top - self._draw_text(self._label_markup(question), x, y_top, width, LABEL_SIZE)
+        """Dibuja icono + etiqueta + ayuda. Devuelve la Y donde empieza el control.
+
+        El icono va a la izquierda, alineado con la primera línea de la etiqueta;
+        el texto se sangra a su derecha. El control de abajo NO se sangra: ocupa
+        el ancho completo de la celda.
+        """
+        icon = self._icon_of(question)
+        indent = ICON_SIZE + ICON_GAP if icon is not None else 0.0
+        text_x = x + indent
+        text_width = width - indent
+
+        if icon is not None:
+            icon_w, icon_h = _fit(icon, ICON_SIZE, ICON_SIZE)
+            self.pdf.drawImage(ImageReader(icon), x, y_top - icon_h,
+                               width=icon_w, height=icon_h, mask='auto')
+
+        y = y_top - self._draw_text(self._label_markup(question), text_x, y_top,
+                                    text_width, LABEL_SIZE)
         y -= GAP_AFTER_LABEL
         if question.get('help_text'):
-            y -= self._draw_text(question['help_text'], x, y, width, HELP_SIZE, MUTED)
+            y -= self._draw_text(question['help_text'], text_x, y, text_width, HELP_SIZE, MUTED)
             y -= GAP_AFTER_HELP
+        if indent:
+            # Espejo del max() de _head_height: ambos deben dejar la misma Y.
+            y = min(y, y_top - (ICON_SIZE + GAP_AFTER_LABEL))
         return y
 
     def _field_style(self, question: Dict[str, Any], x: float) -> Dict[str, Any]:
