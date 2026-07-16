@@ -57,6 +57,25 @@ function storedForm(userId: string | null, id = 'form-1') {
   } as any;
 }
 
+/** Fila guardada con el formato nuevo (secciones + espejo plano). */
+function storedFormWithSections(userId: string | null, id = 'form-1') {
+  const sections = [
+    { id: 's1', title: 'Datos', columns: 2, page_break: false, questions: [
+      { name: 'nombre', type: 'short_text', label: 'Nombre', help_text: '', required: false, options: [], column_span: 1 },
+      { name: 'apellido', type: 'short_text', label: 'Apellido', help_text: '', required: false, options: [], column_span: 1 },
+    ] },
+  ];
+  return {
+    id,
+    userId,
+    name: 'Solicitud',
+    version: 3,
+    payload: { ...validBody(), id, version: 3, sections, questions: sections[0].questions },
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  } as any;
+}
+
 describe('form.controller', () => {
   let req: Partial<Request>;
   let res: Partial<Response>;
@@ -108,6 +127,17 @@ describe('form.controller', () => {
       req = { user: admin };
       await listForms(req as Request, res as Response, next);
       expect(model.list).toHaveBeenCalledWith(null);
+    });
+
+    // questionCount lee el `questions` plano; el espejo derivado lo mantiene
+    // correcto para los payloads con secciones sin tocar el controlador.
+    it('questionCount cuenta bien con secciones y con payloads antiguos', async () => {
+      model.list.mockResolvedValue([storedFormWithSections('u1', 'nuevo'), storedForm('u1', 'viejo')]);
+      req = { user };
+      await listForms(req as Request, res as Response, next);
+      const data = jsonMock.mock.calls[0][0].data;
+      expect(data.find((f: any) => f.id === 'nuevo').questionCount).toBe(2);
+      expect(data.find((f: any) => f.id === 'viejo').questionCount).toBe(1);
     });
   });
 
@@ -229,6 +259,31 @@ describe('form.controller', () => {
       await generateForm(req as Request, res as Response, next);
       expectNotFound();
       expect(jobRepo.save).not.toHaveBeenCalled();
+    });
+
+    // generateForm revalida el payload YA guardado: un formulario creado antes
+    // de las secciones tiene que seguir generando.
+    it('un payload antiguo sin secciones sigue generando (revalidación)', async () => {
+      model.findById.mockResolvedValue(storedForm('u1'));
+      req = { user, params: { id: 'form-1' }, body: {} };
+      await generateForm(req as Request, res as Response, next);
+
+      expect(next).not.toHaveBeenCalled();
+      const definition = savedJob().operationParams.definition;
+      expect(definition.sections).toHaveLength(1);
+      expect(definition.sections[0]).toMatchObject({ title: '', columns: 1 });
+      expect(definition.questions).toHaveLength(1);
+    });
+
+    it('el job lleva las secciones de un payload nuevo', async () => {
+      model.findById.mockResolvedValue(storedFormWithSections('u1'));
+      req = { user, params: { id: 'form-1' }, body: {} };
+      await generateForm(req as Request, res as Response, next);
+
+      expect(next).not.toHaveBeenCalled();
+      const definition = savedJob().operationParams.definition;
+      expect(definition.sections[0]).toMatchObject({ title: 'Datos', columns: 2 });
+      expect(definition.questions.map((q: any) => q.name)).toEqual(['nombre', 'apellido']);
     });
   });
 

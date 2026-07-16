@@ -8,9 +8,14 @@ from pathlib import Path
 
 import pikepdf
 import pytest
+from reportlab.lib.pagesizes import LETTER
+from reportlab.lib.units import mm
 
 from app.config import settings
-from app.operations.form_generate import handle_form_generate
+from app.operations.form_generate import handle_form_generate, pack_rows
+
+USABLE_WIDTH = LETTER[0] - 2 * 18 * mm  # ancho de página menos los márgenes del renderer
+MARGIN_BOTTOM = 20 * mm
 
 
 class FakeCursor:
@@ -125,3 +130,169 @@ def test_missing_definition_raises(tmp_path):
     cur = FakeCursor()
     with pytest.raises(ValueError):
         handle_form_generate({'id': 'j1', 'operation_params': {}}, cur)
+
+
+# --------------------------------------------------------------- secciones
+
+
+def _q(name, qtype='short_text', span=1, **extra):
+    question = {'name': name, 'type': qtype, 'label': name.capitalize(),
+                'help_text': '', 'required': False, 'options': [], 'column_span': span}
+    question.update(extra)
+    return question
+
+
+def _section(**overrides):
+    section = {'title': '', 'columns': 1, 'page_break': False, 'questions': []}
+    section.update(overrides)
+    return section
+
+
+def _sectioned(*sections, **overrides):
+    """Definición con secciones y SIN el espejo plano."""
+    definition = _definition(**overrides)
+    definition['sections'] = list(sections)
+    definition.pop('questions', None)
+    return definition
+
+
+def _run(definition):
+    cur = FakeCursor()
+    result = handle_form_generate(
+        {'id': 'j1', 'operation_params': {'definition': definition}}, cur)
+    return cur, result
+
+
+def _field_rects(path: Path):
+    """(nombre, página, x0, y0, x1, y1) de cada widget. Con el PDF ABIERTO, como
+    _acroform_field_names: las referencias indirectas mueren al cerrarlo."""
+    rects = []
+    with pikepdf.open(path) as pdf:
+        for index, page in enumerate(pdf.pages):
+            for annot in page.get('/Annots', []):
+                name = annot.get('/T')
+                if name is None:
+                    parent = annot.get('/Parent')          # las opciones de radio
+                    name = parent.get('/T') if parent is not None else None
+                x0, y0, x1, y1 = (float(v) for v in annot.get('/Rect'))
+                rects.append((str(name), index, x0, y0, x1, y1))
+    return rects
+
+
+def _by_name(path: Path):
+    return {r[0]: r for r in _field_rects(path)}
+
+
+def test_two_columns_are_side_by_side(tmp_path):
+    cur, _ = _run(_sectioned(_section(columns=2, questions=[_q('nombre'), _q('apellido')])))
+    fields = _by_name(cur.output_paths()[0])
+    left, right = fields['nombre'], fields['apellido']
+
+    assert left[1] == right[1] == 0            # misma página
+    assert abs(left[3] - right[3]) < 0.5       # misma Y: están alineados
+    assert left[2] < right[2]                  # nombre a la izquierda
+    assert left[4] <= right[2]                 # sin solaparse
+    assert abs((left[4] - left[2]) - (right[4] - right[2])) < 0.5   # mismo ancho
+
+
+def test_fields_in_a_row_align_even_with_uneven_labels(tmp_path):
+    # 'cedula' lleva texto de ayuda y 'telefono' no: si cada celda colocara su
+    # control bajo su propia etiqueta, las cajas quedarían a distinta altura.
+    cur, _ = _run(_sectioned(_section(columns=2, questions=[
+        _q('cedula', help_text='Sin guiones'), _q('telefono')])))
+    fields = _by_name(cur.output_paths()[0])
+    assert abs(fields['cedula'][3] - fields['telefono'][3]) < 0.5
+
+
+def test_column_span_takes_the_whole_row(tmp_path):
+    cur, _ = _run(_sectioned(_section(columns=2, questions=[_q('notas', 'long_text', span=2)])))
+    notas = _by_name(cur.output_paths()[0])['notas']
+    assert abs((notas[4] - notas[2]) - USABLE_WIDTH) < 1
+
+
+def test_mixed_row_pushes_full_width_question_below(tmp_path):
+    cur, _ = _run(_sectioned(_section(columns=2, questions=[
+        _q('ciudad'), _q('provincia'), _q('notas', 'long_text', span=2)])))
+    fields = _by_name(cur.output_paths()[0])
+    # El long_text no cabe junto a las cortas: baja a su propia fila.
+    assert fields['notas'][5] <= min(fields['ciudad'][3], fields['provincia'][3])
+    assert abs((fields['notas'][4] - fields['notas'][2]) - USABLE_WIDTH) < 1
+
+
+def test_page_break_starts_a_new_page(tmp_path):
+    cur, _ = _run(_sectioned(
+        _section(title='Solicitante', questions=[_q('nombre')]),
+        _section(title='Garante', page_break=True, questions=[_q('garante')]),
+    ))
+    fields = _by_name(cur.output_paths()[0])
+    assert fields['nombre'][1] == 0
+    assert fields['garante'][1] == 1
+
+
+def test_page_break_on_first_section_leaves_no_blank_page(tmp_path):
+    cur, _ = _run(_sectioned(_section(title='Uno', page_break=True, questions=[_q('nombre')])))
+    with pikepdf.open(cur.output_paths()[0]) as pdf:
+        assert len(pdf.pages) == 1
+
+
+def test_sections_win_over_the_flat_mirror(tmp_path):
+    # El espejo plano acompaña a las secciones; leer ambos duplicaría el render.
+    definition = _definition()                     # trae 5 preguntas en `questions`
+    definition['sections'] = [_section(questions=[_q('unico')])]
+    cur, result = _run(definition)
+
+    assert result['questions'] == 1
+    assert _acroform_field_names(cur.output_paths()[0]) == ['unico']
+
+
+def test_question_count_across_sections(tmp_path):
+    _, result = _run(_sectioned(
+        _section(columns=2, questions=[_q('nombre'), _q('apellido')]),
+        _section(questions=[_q('notas', 'long_text')]),
+    ))
+    assert result['questions'] == 3
+
+
+# Regresión: la estimación de espacio daba por fijo el alto de la pregunta (19mm)
+# sin contar la etiqueta, que se dibuja después. Con 8 campos cortos delante, el
+# cursor cae justo en la ventana donde la estimación pasa pero el alto real no
+# cabe, y el campo terminaba a y0=52.7pt — por debajo del margen inferior (56.7pt).
+def test_long_label_does_not_push_the_field_over_the_footer(tmp_path):
+    label = 'Detalle de la solicitud con una etiqueta deliberadamente larga ' * 11
+    questions = [_q(f'corto_{i}', label=f'Campo {i}') for i in range(8)]
+    questions.append(_q('largo', label=label))
+    cur, _ = _run(_sectioned(_section(questions=questions)))
+
+    for name, page, _x0, y0, _x1, _y1 in _field_rects(cur.output_paths()[0]):
+        assert y0 >= MARGIN_BOTTOM, f'{name} (página {page}) se dibuja sobre el pie'
+
+
+# Regresión: el bucle de opciones no comprobaba espacio entre una y otra, así que
+# las 30 caían todas en la misma página en vez de continuar en la siguiente.
+def test_radio_with_many_options_splits_across_pages(tmp_path):
+    options = [f'Opción {i}' for i in range(30)]
+    cur, _ = _run(_sectioned(_section(questions=[_q('prioridad', 'radio', options=options)])))
+
+    rects = _field_rects(cur.output_paths()[0])
+    assert len(rects) == 30
+    assert len({r[1] for r in rects}) >= 2, 'las 30 opciones deben repartirse en varias páginas'
+    for name, page, _x0, y0, _x1, _y1 in rects:
+        assert y0 >= MARGIN_BOTTOM, f'{name} (página {page}) se sale de la página'
+
+
+@pytest.mark.parametrize('spans, columns, expected', [
+    ([1, 1, 1], 2, [[1, 1], [1]]),      # el sobrante abre fila nueva
+    ([2, 1], 2, [[2], [1]]),
+    ([1, 2], 2, [[1], [2]]),            # el span 2 no cabe al lado: deja el hueco
+    ([1, 1, 1], 3, [[1, 1, 1]]),
+    ([3], 2, [[2]]),                    # span mayor que las columnas: se clampea
+    ([1], 1, [[1]]),
+])
+def test_pack_rows(spans, columns, expected):
+    questions = [_q(f'campo_{i}', span=span) for i, span in enumerate(spans)]
+    rows = pack_rows(questions, columns)
+    assert [[span for _, span in row] for row in rows] == expected
+
+
+def test_pack_rows_empty():
+    assert pack_rows([], 2) == []

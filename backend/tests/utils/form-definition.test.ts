@@ -112,3 +112,150 @@ describe('validateFormDefinition', () => {
     expect(() => validateFormDefinition(null)).toThrow(/Form definition is required/);
   });
 });
+
+/** Sección válida; los tests la mutan para probar cada regla. */
+function section(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    title: 'Datos personales',
+    columns: 2,
+    page_break: false,
+    questions: [
+      { name: 'nombre', type: 'short_text', label: 'Nombre', help_text: '', required: false, options: [], column_span: 1 },
+      { name: 'apellido', type: 'short_text', label: 'Apellido', help_text: '', required: false, options: [], column_span: 1 },
+    ],
+    ...overrides,
+  };
+}
+
+function withSections(...sections: Record<string, unknown>[]): Record<string, unknown> {
+  const raw = validRaw({ sections });
+  delete raw.questions;
+  return raw;
+}
+
+describe('validateFormDefinition · secciones y columnas', () => {
+  it('envuelve un payload sin secciones en una sección implícita', () => {
+    const def = validateFormDefinition(validRaw());
+    expect(def.sections).toHaveLength(1);
+    expect(def.sections[0]).toMatchObject({ title: '', columns: 1, page_break: false });
+    expect(def.sections[0].questions).toHaveLength(2);
+    expect(def.sections[0].questions[0].column_span).toBe(1);
+  });
+
+  // `generateForm` revalida el payload ya guardado en la BD, así que validar dos
+  // veces tiene que dar exactamente lo mismo o los formularios viejos se rompen.
+  it('es idempotente: validar la salida devuelve la misma salida', () => {
+    const once = validateFormDefinition(validRaw());
+    expect(validateFormDefinition(once)).toEqual(once);
+
+    const nested = validateFormDefinition(withSections(section()));
+    expect(validateFormDefinition(nested)).toEqual(nested);
+  });
+
+  // Los `return` son whitelists que reconstruyen el objeto campo a campo: una
+  // clave nueva que no se añada ahí se descarta en silencio y nunca llega al
+  // worker. Este test es el que atrapa ese fallo.
+  it('conserva sections y column_span (no los descarta la whitelist)', () => {
+    const def = validateFormDefinition(withSections(
+      section({ title: 'Notas', columns: 2, page_break: true, questions: [
+        { name: 'notas', type: 'long_text', label: 'Notas', help_text: '', required: false, options: [], column_span: 2 },
+      ] }),
+    ));
+    expect(def.sections[0].title).toBe('Notas');
+    expect(def.sections[0].columns).toBe(2);
+    expect(def.sections[0].page_break).toBe(true);
+    expect(def.sections[0].questions[0].column_span).toBe(2);
+  });
+
+  it('si vienen sections, el questions de entrada se ignora', () => {
+    const raw = validRaw({ sections: [section()] });
+    // `questions` de validRaw() trae 'nombre' y 'prioridad'; sections manda.
+    const def = validateFormDefinition(raw);
+    expect(def.questions.map((q) => q.name)).toEqual(['nombre', 'apellido']);
+  });
+
+  it('el espejo questions aplana las secciones en orden', () => {
+    const def = validateFormDefinition(withSections(
+      section({ questions: [{ name: 'campo_a', type: 'short_text', label: 'A', help_text: '', required: false, options: [] }] }),
+      section({ questions: [{ name: 'campo_b', type: 'short_text', label: 'B', help_text: '', required: false, options: [] }] }),
+    ));
+    expect(def.questions.map((q) => q.name)).toEqual(['campo_a', 'campo_b']);
+  });
+
+  it('columns y column_span ausentes caen en 1', () => {
+    const def = validateFormDefinition(withSections(
+      section({ columns: undefined, questions: [
+        { name: 'solo', type: 'short_text', label: 'S', help_text: '', required: false, options: [] },
+      ] }),
+    ));
+    expect(def.sections[0].columns).toBe(1);
+    expect(def.sections[0].questions[0].column_span).toBe(1);
+  });
+
+  it('acepta columns como string numérico', () => {
+    expect(validateFormDefinition(withSections(section({ columns: '3' }))).sections[0].columns).toBe(3);
+  });
+
+  it('rechaza nombres duplicados en secciones distintas (unicidad global)', () => {
+    const raw = withSections(
+      section({ questions: [{ name: 'campo', type: 'short_text', label: 'A', help_text: '', required: false, options: [] }] }),
+      section({ questions: [{ name: 'campo', type: 'short_text', label: 'B', help_text: '', required: false, options: [] }] }),
+    );
+    expect(() => validateFormDefinition(raw)).toThrow(/unique internal name/);
+  });
+
+  it('numera los errores de forma global a través de secciones', () => {
+    const raw = withSections(
+      section(),
+      section({ questions: [{ name: '', type: 'nope', label: 'x', help_text: '', required: false, options: [] }] }),
+    );
+    // Las 2 preguntas de la primera sección ya se contaron: esta es la 3ª.
+    expect(() => validateFormDefinition(raw)).toThrow(/Question 3 has an invalid type/);
+  });
+
+  const sectionCases: Array<[string, Record<string, unknown>, string]> = [
+    ['columns 0', section({ columns: 0 }), 'between 1 and 3 columns'],
+    ['columns 4', section({ columns: 4 }), 'between 1 and 3 columns'],
+    ['columns no numérico', section({ columns: 'x' }), 'between 1 and 3 columns'],
+    ['columns decimal', section({ columns: 2.5 }), 'between 1 and 3 columns'],
+    ['título de sección > 120', section({ title: 'x'.repeat(121) }), 'at most 120 characters'],
+  ];
+  it.each(sectionCases)('rechaza %s con 400', (_name, sec, message) => {
+    expect(() => validateFormDefinition(withSections(sec))).toThrow(ValidationError);
+    expect(() => validateFormDefinition(withSections(sec))).toThrow(message);
+  });
+
+  it('rechaza column_span mayor que las columnas de su sección', () => {
+    const raw = withSections(section({ columns: 2, questions: [
+      { name: 'ancho', type: 'short_text', label: 'X', help_text: '', required: false, options: [], column_span: 3 },
+    ] }));
+    expect(() => validateFormDefinition(raw)).toThrow(/spans 3 columns but its section only has 2/);
+  });
+
+  it('rechaza column_span inválido', () => {
+    const raw = withSections(section({ questions: [
+      { name: 'malo', type: 'short_text', label: 'X', help_text: '', required: false, options: [], column_span: 0 },
+    ] }));
+    expect(() => validateFormDefinition(raw)).toThrow(/invalid column_span/);
+  });
+
+  it('rechaza más de 20 secciones', () => {
+    const many = Array.from({ length: 21 }, () => section({ questions: [] }));
+    expect(() => validateFormDefinition(withSections(...many))).toThrow(/more than 20 sections/);
+  });
+
+  it('rechaza más de 100 preguntas repartidas entre secciones', () => {
+    const make = (prefix: string) => section({
+      questions: Array.from({ length: 51 }, (_, i) => ({
+        name: `${prefix}${i}`, type: 'short_text', label: 'x', help_text: '', required: false, options: [],
+      })),
+    });
+    expect(() => validateFormDefinition(withSections(make('a'), make('b')))).toThrow(/more than 100/);
+  });
+
+  it('acepta un formulario con secciones vacías', () => {
+    const def = validateFormDefinition(withSections(section({ questions: [] })));
+    expect(def.questions).toEqual([]);
+    expect(def.sections).toHaveLength(1);
+  });
+});

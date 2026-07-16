@@ -160,6 +160,8 @@
   span { font-size: 0.85rem; color: var(--ink-soft); }
 }
 
+.btn.full { width: 100%; }
+
 .alert {
   background: #fef2f2;
   border: 1px solid #fecaca;
@@ -190,11 +192,93 @@
   p { margin: 0; color: var(--ink-soft); font-size: 0.9rem; }
 }
 
-.paper-body { display: flex; flex-direction: column; gap: 0.75rem; }
+.paper-body { display: flex; flex-direction: column; gap: 1.25rem; }
+
+.paper-section {
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 0.5rem;
+  &.active { border-color: var(--line); }
+}
+
+.section-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.5rem;
+  padding-bottom: 0.5rem;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid var(--line);
+}
+
+// El título se queda con el ancho sobrante y empuja los controles a una segunda
+// fila cuando el lienzo es estrecho, en vez de recortarse.
+.section-title-input {
+  flex: 1 1 11rem;
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 0.3rem 0.45rem;
+  font: inherit;
+  font-weight: 700;
+  color: #14213d;
+  background: transparent;
+  &:hover { border-color: var(--line); }
+  &:focus { border-color: var(--cobalt); outline: none; background: #fff; }
+}
+
+.section-columns {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.3rem 0.4rem;
+  font-size: 0.8rem;
+}
+
+.check-row.inline {
+  flex: 0 0 auto;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.page-break-hint,
+.section-empty { font-size: 0.78rem; color: var(--ink-soft); }
+
+.page-break-hint {
+  margin: 0 0 0.6rem;
+  padding-top: 0.4rem;
+  border-top: 1px dashed var(--line);
+}
+
+.section-empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 0.9rem;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  text-align: center;
+}
+
+// Rejilla espejo de la del PDF: `grid-auto-flow: row` (el default) empaqueta
+// igual que el worker — lo que no cabe en la fila baja y deja el hueco. No usar
+// `dense`: rellenaría los huecos y la vista previa mentiría.
+.section-questions {
+  display: grid;
+  gap: 0.75rem;
+  align-items: start;
+  min-height: 48px;
+  border-radius: 10px;
+
+  // Sin ordenado en vivo del CDK no hay hueco que anticipe la posición, así que
+  // al menos marcamos qué sección va a recibir la pregunta.
+  &.cdk-drop-list-receiving,
+  &.cdk-drop-list-dragging { box-shadow: inset 0 0 0 1px var(--cobalt); }
+}
 
 .question-card {
   display: flex;
-  gap: 0.75rem;
+  gap: 0.5rem;
   text-align: left;
   width: 100%;
   border: 1px solid transparent;
@@ -206,20 +290,19 @@
   transition: border-color 0.15s, background 0.15s;
   &:hover { background: var(--mist); }
   &.selected { border-color: var(--cobalt); background: var(--cobalt-soft); }
+  &.cdk-drag-preview {
+    background: #fff;
+    border-color: var(--cobalt);
+    box-shadow: 0 8px 24px rgba(18, 35, 63, 0.18);
+  }
+  &.cdk-drag-placeholder { opacity: 0.35; }
 }
 
-.question-number {
+.drag-handle {
   flex: 0 0 auto;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: var(--cobalt);
-  color: #fff;
-  font-size: 0.78rem;
-  font-weight: 700;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  align-self: flex-start;
+  color: var(--ink-soft);
+  cursor: grab;
 }
 
 .question-content { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.4rem; }

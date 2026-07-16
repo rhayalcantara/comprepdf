@@ -240,6 +240,8 @@ export type FormPageSize = 'letter' | 'a4';
 export type FormQuestionType =
   | 'short_text' | 'long_text' | 'number' | 'date' | 'checkbox' | 'radio' | 'select';
 
+export type FormColumns = 1 | 2 | 3;
+
 export interface FormQuestion {
   id: string;
   name: string;
@@ -248,6 +250,19 @@ export interface FormQuestion {
   help_text: string;
   required: boolean;
   options: string[];
+  /** Columnas que ocupa dentro de su sección (1..section.columns). */
+  column_span: number;
+}
+
+/** Grupo de preguntas con su etiqueta y su rejilla de columnas. */
+export interface FormSection {
+  id: string;
+  /** Etiqueta del grupo; vacía = sección sin encabezado. */
+  title: string;
+  columns: FormColumns;
+  /** Empezar la sección en una página nueva del PDF. */
+  page_break: boolean;
+  questions: FormQuestion[];
 }
 
 export interface FormDefinition {
@@ -257,7 +272,13 @@ export interface FormDefinition {
   page_size: FormPageSize;
   header: { title: string; subtitle: string };
   footer: { text: string; show_page_numbers: boolean };
-  questions: FormQuestion[];
+  sections: FormSection[];
+  /**
+   * Espejo plano que emite el backend para que un worker antiguo siga
+   * renderizando. Es de solo lectura: la fuente de verdad es `sections`, y
+   * `normalizeDefinition` lo descarta al cargar. No lo envíes.
+   */
+  questions?: FormQuestion[];
   version?: number;
 }
 

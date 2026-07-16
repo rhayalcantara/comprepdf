@@ -28,6 +28,11 @@ const OPTION_TYPES: QuestionType[] = ['radio', 'select'];
 /** Nombre interno del campo (AcroForm): letra inicial + [A-Za-z0-9_], 2-64 chars. */
 const NAME_PATTERN = /^[a-zA-Z][a-zA-Z0-9_]{1,63}$/;
 
+/** Columnas por sección: más de 3 deja las etiquetas ilegibles en Letter/A4. */
+export const MAX_COLUMNS = 3;
+const MAX_SECTIONS = 20;
+const MAX_QUESTIONS = 100;
+
 export interface FormQuestion {
   id?: string;
   name: string;
@@ -36,6 +41,17 @@ export interface FormQuestion {
   help_text: string;
   required: boolean;
   options: string[];
+  /** Columnas que ocupa dentro de su sección (1..section.columns). */
+  column_span: number;
+}
+
+export interface FormSection {
+  id?: string;
+  /** Etiqueta del grupo; vacía = sección sin encabezado. */
+  title: string;
+  columns: number;
+  page_break: boolean;
+  questions: FormQuestion[];
 }
 
 export interface FormDefinition {
@@ -45,6 +61,14 @@ export interface FormDefinition {
   page_size: PageSize;
   header: { title: string; subtitle: string };
   footer: { text: string; show_page_numbers: boolean };
+  sections: FormSection[];
+  /**
+   * Espejo derivado de `sections`: todas las preguntas aplanadas en orden. Lo
+   * emitimos siempre para que un worker anterior a las secciones siga
+   * renderizando el formulario (a una columna) en vez de un PDF vacío, y para
+   * que `questionCount` del controlador siga valiendo. Nadie lo escribe: se
+   * calcula solo en el `return` de `validateFormDefinition`.
+   */
   questions: FormQuestion[];
   version?: number;
 }
@@ -57,6 +81,20 @@ function asBool(value: unknown): boolean {
   return value === true || value === 'true';
 }
 
+/** Entero tolerante con strings numéricos. `undefined` si falta; `NaN` si no es entero. */
+function asInt(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  if (typeof value === 'number') {
+    return Number.isInteger(value) ? value : NaN;
+  }
+  if (typeof value === 'string' && /^-?\d+$/.test(value.trim())) {
+    return parseInt(value.trim(), 10);
+  }
+  return NaN;
+}
+
 function requireLen(value: string, field: string, max: number, min = 0): string {
   if (value.length < min) {
     throw new ValidationError(`${field} is required`);
@@ -67,7 +105,7 @@ function requireLen(value: string, field: string, max: number, min = 0): string 
   return value;
 }
 
-function validateQuestion(raw: unknown, index: number): FormQuestion {
+function validateQuestion(raw: unknown, index: number, maxColumns: number): FormQuestion {
   if (!raw || typeof raw !== 'object') {
     throw new ValidationError(`Question ${index + 1} is invalid`);
   }
@@ -103,6 +141,17 @@ function validateQuestion(raw: unknown, index: number): FormQuestion {
     }
   }
 
+  const spanRaw = asInt(q.column_span);
+  const columnSpan = spanRaw === undefined ? 1 : spanRaw;
+  if (!Number.isInteger(columnSpan) || columnSpan < 1) {
+    throw new ValidationError(`Question "${name}" has an invalid column_span`);
+  }
+  if (columnSpan > maxColumns) {
+    throw new ValidationError(
+      `Question "${name}" spans ${columnSpan} columns but its section only has ${maxColumns}`,
+    );
+  }
+
   return {
     id: typeof q.id === 'string' ? q.id : undefined,
     name,
@@ -111,6 +160,40 @@ function validateQuestion(raw: unknown, index: number): FormQuestion {
     help_text: helpText,
     required: asBool(q.required),
     options: OPTION_TYPES.includes(type) ? options : [],
+    column_span: columnSpan,
+  };
+}
+
+/**
+ * Valida una sección. `offset` es el número de preguntas ya vistas en secciones
+ * anteriores, para que los errores sigan numerando de forma global ("Question 7")
+ * y no reinicien la cuenta en cada sección.
+ */
+function validateSection(raw: unknown, index: number, offset: number): FormSection {
+  if (!raw || typeof raw !== 'object') {
+    throw new ValidationError(`Section ${index + 1} is invalid`);
+  }
+  const s = raw as Record<string, unknown>;
+
+  const title = requireLen(asString(s.title).trim(), `Section ${index + 1} title`, 120);
+
+  const columnsRaw = asInt(s.columns);
+  const columns = columnsRaw === undefined ? 1 : columnsRaw;
+  if (!Number.isInteger(columns) || columns < 1 || columns > MAX_COLUMNS) {
+    throw new ValidationError(
+      `Section ${index + 1} must have between 1 and ${MAX_COLUMNS} columns`,
+    );
+  }
+
+  const questionsRaw = Array.isArray(s.questions) ? s.questions : [];
+  const questions = questionsRaw.map((q, i) => validateQuestion(q, offset + i, columns));
+
+  return {
+    id: typeof s.id === 'string' ? s.id : undefined,
+    title,
+    columns,
+    page_break: asBool(s.page_break),
+    questions,
   };
 }
 
@@ -142,12 +225,20 @@ export function validateFormDefinition(raw: unknown): FormDefinition {
   const footerText = requireLen(asString(footerRaw.text).trim(), 'Footer text', 160);
   const showPageNumbers = footerRaw.show_page_numbers === undefined ? true : asBool(footerRaw.show_page_numbers);
 
-  const questionsRaw = Array.isArray(body.questions) ? body.questions : [];
-  if (questionsRaw.length > 100) {
-    throw new ValidationError('A form cannot have more than 100 questions');
-  }
-  const questions = questionsRaw.map((q, i) => validateQuestion(q, i));
+  // `sections` manda: si viene, el `questions` de entrada se ignora por completo
+  // (es un espejo derivado, no una fuente de verdad). Si no viene, el payload es
+  // de antes de las secciones y lo envolvemos en una sección implícita sin
+  // título, que renderiza igual que siempre. Esto es obligatorio: `generateForm`
+  // revalida payloads ya guardados en la BD.
+  const sections = Array.isArray(body.sections)
+    ? validateSections(body.sections)
+    : [wrapLegacyQuestions(body.questions)];
 
+  const questions = sections.flatMap((s) => s.questions);
+
+  // Unicidad GLOBAL, no por sección: el AcroForm es plano y dos campos con el
+  // mismo nombre se fusionan en uno con dos widgets (se escribe en uno y aparece
+  // en el otro).
   const names = questions.map((q) => q.name);
   if (new Set(names).size !== names.length) {
     throw new ValidationError('Each question must have a unique internal name');
@@ -160,6 +251,39 @@ export function validateFormDefinition(raw: unknown): FormDefinition {
     page_size,
     header: { title, subtitle },
     footer: { text: footerText, show_page_numbers: showPageNumbers },
+    sections,
     questions,
+  };
+}
+
+function validateSections(raw: unknown[]): FormSection[] {
+  if (raw.length > MAX_SECTIONS) {
+    throw new ValidationError(`A form cannot have more than ${MAX_SECTIONS} sections`);
+  }
+  const sections: FormSection[] = [];
+  let total = 0;
+  raw.forEach((s, i) => {
+    const section = validateSection(s, i, total);
+    total += section.questions.length;
+    if (total > MAX_QUESTIONS) {
+      throw new ValidationError(`A form cannot have more than ${MAX_QUESTIONS} questions`);
+    }
+    sections.push(section);
+  });
+  return sections;
+}
+
+/** Payload anterior a las secciones: `questions` plano -> sección implícita. */
+function wrapLegacyQuestions(raw: unknown): FormSection {
+  const questionsRaw = Array.isArray(raw) ? raw : [];
+  if (questionsRaw.length > MAX_QUESTIONS) {
+    throw new ValidationError(`A form cannot have more than ${MAX_QUESTIONS} questions`);
+  }
+  return {
+    id: undefined,
+    title: '',
+    columns: 1,
+    page_break: false,
+    questions: questionsRaw.map((q, i) => validateQuestion(q, i, 1)),
   };
 }

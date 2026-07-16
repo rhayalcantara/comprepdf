@@ -1,3 +1,4 @@
+import { CdkDragDrop, DragDropModule, moveItemInArray, transferArrayItem } from '@angular/cdk/drag-drop';
 import { CommonModule } from '@angular/common';
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -9,8 +10,13 @@ import { ApiService, FormDefinition, JobResponse } from '../../core/services/api
 import {
   createForm,
   createQuestion,
+  createSection,
+  FormColumns,
   FormQuestion,
   FormQuestionType,
+  FormSection,
+  MAX_COLUMNS,
+  normalizeDefinition,
   QUESTION_TYPES,
 } from './form.models';
 
@@ -24,14 +30,16 @@ type PreviewDevice = 'desktop' | 'tablet' | 'mobile';
 @Component({
   selector: 'app-form-editor',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, DragDropModule, FormsModule, RouterLink],
   templateUrl: './form-editor.component.html',
   styleUrl: './form-editor.component.scss',
 })
 export class FormEditorComponent implements OnInit, OnDestroy {
   readonly questionTypes = QUESTION_TYPES;
+  readonly columnOptions: FormColumns[] = [1, 2, 3];
   definition: FormDefinition = createForm();
-  selectedQuestionId = this.definition.questions[0]?.id ?? '';
+  selectedQuestionId = this.definition.sections[0]?.questions[0]?.id ?? '';
+  activeSectionId = this.definition.sections[0]?.id ?? '';
   previewDevice: PreviewDevice = 'desktop';
   saved = false;
   busy = false;
@@ -65,8 +73,7 @@ export class FormEditorComponent implements OnInit, OnDestroy {
             this.errorMessage = res.error?.message ?? 'No se pudo cargar el formulario.';
             return;
           }
-          this.definition = res.data;
-          this.selectedQuestionId = res.data.questions[0]?.id ?? '';
+          this.loadDefinition(res.data);
           this.saved = true;
           this.statusMessage = `Guardado · versión ${res.data.version ?? 1}`;
         },
@@ -74,37 +81,155 @@ export class FormEditorComponent implements OnInit, OnDestroy {
       });
   }
 
+  /** Todas las preguntas en orden de sección (el espejo plano no se edita). */
+  get allQuestions(): FormQuestion[] {
+    return this.definition.sections.flatMap((s) => s.questions);
+  }
+
   get selectedQuestion(): FormQuestion | undefined {
-    return this.definition.questions.find((q) => q.id === this.selectedQuestionId);
+    return this.allQuestions.find((q) => q.id === this.selectedQuestionId);
+  }
+
+  /** Sección que contiene la pregunta seleccionada; sus columnas acotan el span. */
+  get selectedSection(): FormSection | undefined {
+    return this.definition.sections.find((s) =>
+      s.questions.some((q) => q.id === this.selectedQuestionId),
+    );
+  }
+
+  /** Opciones de span disponibles para la pregunta seleccionada. */
+  get spanOptions(): number[] {
+    const columns = this.selectedSection?.columns ?? 1;
+    return Array.from({ length: columns }, (_, i) => i + 1);
+  }
+
+  /** Sección donde caerán las preguntas nuevas. */
+  get activeSectionTitle(): string {
+    const section = this.definition.sections.find((s) => s.id === this.activeSectionId)
+      ?? this.definition.sections[0];
+    return section?.title?.trim() || 'Sección sin título';
   }
 
   selectQuestion(question: FormQuestion): void {
     this.selectedQuestionId = question.id;
+    this.activeSectionId = this.selectedSection?.id ?? this.activeSectionId;
   }
 
   addQuestion(type: FormQuestionType = 'short_text'): void {
-    const question = createQuestion(type, this.definition.questions.length + 1);
-    this.definition.questions.push(question);
+    const section = this.definition.sections.find((s) => s.id === this.activeSectionId)
+      ?? this.definition.sections[0];
+    if (!section) return;
+    const question = createQuestion(type, this.allQuestions.length + 1);
+    section.questions.push(question);
     this.selectedQuestionId = question.id;
+    this.activeSectionId = section.id;
     this.markChanged();
   }
 
   removeQuestion(question: FormQuestion): void {
-    const index = this.definition.questions.indexOf(question);
-    this.definition.questions.splice(index, 1);
-    this.selectedQuestionId = this.definition.questions[Math.max(0, index - 1)]?.id ?? '';
+    const section = this.definition.sections.find((s) => s.questions.includes(question));
+    if (!section) return;
+    const index = section.questions.indexOf(question);
+    section.questions.splice(index, 1);
+    this.selectedQuestionId = section.questions[Math.max(0, index - 1)]?.id ?? '';
     this.markChanged();
   }
 
   moveQuestion(question: FormQuestion, direction: -1 | 1): void {
-    const index = this.definition.questions.indexOf(question);
+    const section = this.definition.sections.find((s) => s.questions.includes(question));
+    if (!section) return;
+    const index = section.questions.indexOf(question);
     const nextIndex = index + direction;
-    if (nextIndex < 0 || nextIndex >= this.definition.questions.length) return;
-    [this.definition.questions[index], this.definition.questions[nextIndex]] = [
-      this.definition.questions[nextIndex],
-      this.definition.questions[index],
+    if (nextIndex < 0 || nextIndex >= section.questions.length) return;
+    [section.questions[index], section.questions[nextIndex]] = [
+      section.questions[nextIndex],
+      section.questions[index],
     ];
     this.markChanged();
+  }
+
+  // --- Secciones ---
+
+  addSection(): void {
+    const section = createSection(`Sección ${this.definition.sections.length + 1}`);
+    this.definition.sections.push(section);
+    this.activeSectionId = section.id;
+    this.markChanged();
+  }
+
+  removeSection(section: FormSection): void {
+    if (this.definition.sections.length <= 1) return;
+    const index = this.definition.sections.indexOf(section);
+    this.definition.sections.splice(index, 1);
+    this.activeSectionId = this.definition.sections[Math.max(0, index - 1)]?.id ?? '';
+    if (!this.allQuestions.some((q) => q.id === this.selectedQuestionId)) {
+      this.selectedQuestionId = '';
+    }
+    this.markChanged();
+  }
+
+  /**
+   * Al reducir las columnas hay que recortar los spans: si no, el backend
+   * responde 400 ("ocupa 3 columnas pero la sección solo tiene 2") sobre una
+   * pregunta que el usuario ni siquiera ha tocado.
+   */
+  setColumns(section: FormSection, columns: FormColumns): void {
+    section.columns = Math.min(Math.max(columns, 1), MAX_COLUMNS) as FormColumns;
+    section.questions.forEach((q) => {
+      q.column_span = Math.min(q.column_span, section.columns);
+    });
+    this.markChanged();
+  }
+
+  drop(event: CdkDragDrop<FormQuestion[]>): void {
+    const index = this.dropIndex(event);
+    if (event.previousContainer === event.container) {
+      moveItemInArray(event.container.data, event.previousIndex, index);
+    } else {
+      transferArrayItem(event.previousContainer.data, event.container.data, event.previousIndex, index);
+      // La sección de destino puede tener menos columnas que la de origen.
+      const moved = event.container.data[index];
+      const target = this.definition.sections.find((s) => s.questions.includes(moved));
+      if (target) moved.column_span = Math.min(moved.column_span, target.columns);
+    }
+    this.markChanged();
+  }
+
+  /**
+   * Índice donde insertar, calculado desde el punto en que se soltó.
+   *
+   * El CDK 17 solo ordena en un eje (`vertical` u `horizontal`); en una rejilla,
+   * dos tarjetas de la misma fila comparten la Y y su `currentIndex` no las
+   * distingue, así que arrastrar una al lado de otra no hacía nada. Con el
+   * ordenado del CDK desactivado, el DOM no se mueve durante el arrastre y
+   * podemos ubicar el punto en orden de lectura (fila, luego columna).
+   */
+  private dropIndex(event: CdkDragDrop<FormQuestion[]>): number {
+    const dragged = event.item.element.nativeElement;
+    const cards = Array.from(
+      event.container.element.nativeElement.querySelectorAll<HTMLElement>('.question-card'),
+    ).filter((card) => card !== dragged);
+    if (!cards.length) return 0;
+
+    const rects = cards.map((card) => card.getBoundingClientRect());
+    const { x, y } = event.dropPoint;
+
+    // Las tarjetas de una misma fila no miden lo mismo de alto (una casilla ocupa
+    // menos que una selección múltiple), así que agrupamos por el borde superior
+    // y usamos la banda completa de la fila en vez del rectángulo de cada una.
+    const rows: number[][] = [];
+    rects.forEach((rect, index) => {
+      const row = rows.find((r) => Math.abs(rects[r[0]].top - rect.top) < 4);
+      if (row) row.push(index);
+      else rows.push([index]);
+    });
+
+    for (const row of rows) {
+      if (y > Math.max(...row.map((i) => rects[i].bottom))) continue;   // el punto cae más abajo
+      const hit = row.find((i) => x < rects[i].left + rects[i].width / 2);
+      return hit ?? row[row.length - 1] + 1;
+    }
+    return cards.length;
   }
 
   changeQuestionType(question: FormQuestion): void {
@@ -139,7 +264,7 @@ export class FormEditorComponent implements OnInit, OnDestroy {
           this.statusMessage = 'No guardado';
           return;
         }
-        this.definition = res.data;
+        this.loadDefinition(res.data);
         this.saved = true;
         this.statusMessage = `Guardado · versión ${res.data.version ?? 1}`;
         if (!this.route.snapshot.paramMap.get('id')) {
@@ -243,6 +368,13 @@ export class FormEditorComponent implements OnInit, OnDestroy {
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
+  /** Normaliza lo que llega del backend antes de editarlo. */
+  private loadDefinition(raw: FormDefinition): void {
+    this.definition = normalizeDefinition(raw);
+    this.selectedQuestionId = this.allQuestions[0]?.id ?? '';
+    this.activeSectionId = this.definition.sections[0]?.id ?? '';
+  }
+
   private safeName(): string {
     return (
       this.definition.name
@@ -255,8 +387,10 @@ export class FormEditorComponent implements OnInit, OnDestroy {
   }
 
   private isValid(): boolean {
-    const names = this.definition.questions.map((q) => q.name);
-    const invalidSelection = this.definition.questions.some(
+    // Unicidad global, no por sección: el AcroForm es plano y dos campos con el
+    // mismo nombre se fusionarían en uno.
+    const names = this.allQuestions.map((q) => q.name);
+    const invalidSelection = this.allQuestions.some(
       (q) => (q.type === 'radio' || q.type === 'select') && q.options.length < 2,
     );
     if (!this.definition.name.trim() || !this.definition.header.title.trim()) {

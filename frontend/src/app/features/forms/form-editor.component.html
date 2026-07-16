@@ -59,7 +59,7 @@
     </label>
 
     <div class="section-divider"></div>
-    <p class="section-label">Agregar pregunta</p>
+    <p class="section-label">Agregar pregunta a «{{ activeSectionTitle }}»</p>
     <div class="question-type-grid">
       @for (type of questionTypes; track type.value) {
         <button type="button" (click)="addQuestion(type.value)">
@@ -67,6 +67,9 @@
         </button>
       }
     </div>
+
+    <div class="section-divider"></div>
+    <button class="btn secondary full" type="button" (click)="addSection()">+ Agregar sección</button>
   </aside>
 
   <!-- Centro: lienzo con la maqueta del formulario -->
@@ -80,7 +83,7 @@
         <p class="eyebrow">Composición</p>
         <h1>{{ definition.name }}</h1>
       </div>
-      <span>{{ definition.questions.length }} preguntas</span>
+      <span>{{ allQuestions.length }} preguntas · {{ definition.sections.length }} secciones</span>
     </div>
 
     <article class="paper" [class.a4]="definition.page_size === 'a4'">
@@ -90,37 +93,97 @@
         <p>{{ definition.header.subtitle }}</p>
       </header>
 
-      <div class="paper-body">
-        @for (question of definition.questions; track question.id; let index = $index) {
-          <button
-            class="question-card"
-            type="button"
-            [class.selected]="selectedQuestionId === question.id"
-            (click)="selectQuestion(question)"
+      <!-- cdkDropListGroup conecta las listas solas: gestionar connectedTo con
+           ids se rompe al añadir o borrar secciones. -->
+      <div class="paper-body" cdkDropListGroup>
+        @for (section of definition.sections; track section.id; let sectionIndex = $index) {
+          <section
+            class="paper-section"
+            [class.active]="activeSectionId === section.id"
+            (click)="activeSectionId = section.id"
           >
-            <span class="question-number">{{ index + 1 }}</span>
-            <span class="question-content">
-              <span class="question-label">
-                {{ question.label }}
-                @if (question.required) { <em>*</em> }
-              </span>
-              @if (question.help_text) { <small>{{ question.help_text }}</small> }
-              @switch (question.type) {
-                @case ('long_text') { <span class="mock-input tall"></span> }
-                @case ('checkbox') { <span class="mock-choice"><i></i>Sí</span> }
-                @case ('radio') {
-                  <span class="mock-options">
-                    @for (option of question.options; track option) {
-                      <span class="mock-choice"><i class="radio"></i>{{ option }}</span>
+            <div class="section-toolbar">
+              <input
+                class="section-title-input"
+                [(ngModel)]="section.title"
+                (ngModelChange)="markChanged()"
+                placeholder="Sección sin título"
+                aria-label="Título de la sección"
+              />
+              <select
+                class="section-columns"
+                [ngModel]="section.columns"
+                (ngModelChange)="setColumns(section, $event)"
+                aria-label="Columnas de la sección"
+              >
+                @for (columns of columnOptions; track columns) {
+                  <option [ngValue]="columns">{{ columns }} {{ columns === 1 ? 'columna' : 'columnas' }}</option>
+                }
+              </select>
+              <label class="check-row inline" title="Empezar esta sección en una página nueva">
+                <input type="checkbox" [(ngModel)]="section.page_break" (ngModelChange)="markChanged()" />
+                Página nueva
+              </label>
+              <button
+                class="icon-button danger"
+                type="button"
+                title="Eliminar sección"
+                [disabled]="definition.sections.length <= 1"
+                (click)="removeSection(section)"
+              >×</button>
+            </div>
+
+            @if (section.page_break && sectionIndex > 0) {
+              <p class="page-break-hint">Empieza en una página nueva</p>
+            }
+
+            <div
+              class="section-questions"
+              cdkDropList
+              cdkDropListSortingDisabled
+              [cdkDropListData]="section.questions"
+              (cdkDropListDropped)="drop($event)"
+              [style.grid-template-columns]="'repeat(' + section.columns + ', minmax(0, 1fr))'"
+            >
+              @for (question of section.questions; track question.id) {
+                <button
+                  class="question-card"
+                  type="button"
+                  cdkDrag
+                  [class.selected]="selectedQuestionId === question.id"
+                  [style.grid-column]="'span ' + question.column_span"
+                  (click)="selectQuestion(question)"
+                >
+                  <span class="drag-handle" cdkDragHandle title="Arrastrar">⠿</span>
+                  <span class="question-content">
+                    <span class="question-label">
+                      {{ question.label }}
+                      @if (question.required) { <em>*</em> }
+                    </span>
+                    @if (question.help_text) { <small>{{ question.help_text }}</small> }
+                    @switch (question.type) {
+                      @case ('long_text') { <span class="mock-input tall"></span> }
+                      @case ('checkbox') { <span class="mock-choice"><i></i>Sí</span> }
+                      @case ('radio') {
+                        <span class="mock-options">
+                          @for (option of question.options; track option) {
+                            <span class="mock-choice"><i class="radio"></i>{{ option }}</span>
+                          }
+                        </span>
+                      }
+                      @case ('select') { <span class="mock-input">Seleccione una opción <b>⌄</b></span> }
+                      @default { <span class="mock-input"></span> }
                     }
                   </span>
-                }
-                @case ('select') { <span class="mock-input">Seleccione una opción <b>⌄</b></span> }
-                @default { <span class="mock-input"></span> }
+                </button>
+              } @empty {
+                <p class="section-empty">Sección vacía · arrastra preguntas aquí o agrégalas desde el panel.</p>
               }
-            </span>
-          </button>
-        } @empty {
+            </div>
+          </section>
+        }
+
+        @if (!allQuestions.length) {
           <div class="empty-state">
             <strong>El formulario está vacío</strong>
             <span>Agrega una pregunta desde el panel izquierdo.</span>
@@ -176,6 +239,19 @@
             (ngModelChange)="updateOptions(question, $event)"
           ></textarea>
           <small>Separa cada opción con una coma.</small>
+        </label>
+      }
+      @if (spanOptions.length > 1) {
+        <label class="field">
+          <span>Ancho</span>
+          <select [(ngModel)]="question.column_span" (ngModelChange)="markChanged()">
+            @for (span of spanOptions; track span) {
+              <option [ngValue]="span">
+                {{ span === 1 ? '1 columna' : span + ' columnas' }}{{ span === selectedSection?.columns ? ' (todo el ancho)' : '' }}
+              </option>
+            }
+          </select>
+          <small>Cuántas columnas ocupa dentro de su sección.</small>
         </label>
       }
       <label class="check-row required-row">
