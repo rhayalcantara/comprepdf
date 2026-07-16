@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_dynamic_libs, collect_submodules
+from PyInstaller.utils.hooks import collect_all, collect_dynamic_libs, collect_submodules
 
 hiddenimports = []
 hiddenimports += collect_submodules('mysql.connector')
@@ -11,12 +11,21 @@ hiddenimports += collect_submodules('PIL')
 binaries = collect_dynamic_libs('PIL')
 binaries += [('C:\\Users\\ralcantara\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages\\mysql\\vendor\\plugin\\*.dll', 'mysql\\vendor\\plugin'), ('C:\\Users\\ralcantara\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages\\mysql\\vendor\\*.dll', 'mysql\\vendor')]
 
+# reportlab (generación de formularios PDF): necesita sus datos (fuentes AFM/TTF
+# de reportlab/fonts) y la extensión C _rl_accel. collect_all los recoge todos;
+# sin las fuentes empaquetadas el worker fallaría al generar el PDF en runtime.
+datas = []
+_rl_datas, _rl_binaries, _rl_hiddenimports = collect_all('reportlab')
+datas += _rl_datas
+binaries += _rl_binaries
+hiddenimports += _rl_hiddenimports
+
 
 a = Analysis(
     ['worker_entry.py'],
     pathex=[],
     binaries=binaries,
-    datas=[],
+    datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
