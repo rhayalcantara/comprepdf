@@ -1,6 +1,27 @@
 # Plan de despliegue a QA — Módulo de Formularios PDF
 
-> **Estado:** listo para ejecutar · **Fecha:** 2026-07-15 · **Rama:** feat/dashboard
+> **Estado:** ✅ EJECUTADO (2026-07-15) · **Fecha:** 2026-07-15 · **Rama:** feat/dashboard
+
+## Resultado de la ejecución (2026-07-15)
+
+Desplegado y verificado en QA (`192.168.7.222`):
+- **QA estaba apagado** (reinicio del box); se levantó con un coldstart sin `pause` vía schtasks.
+- **Backup previo** 🔒: `backups\comprepdf_pre_forms_20260715_2115.sql` (46 jobs, 6 usuarios) +
+  copias-aside `backend\dist_prev`, `worker\comprepdf-worker_prev`, `frontend\browser_pre_forms`.
+- **Migración 005** aplicada: enum con `form_generate` + tabla `pdf_forms`; **46 jobs intactos**.
+- **Backend** (sin deps npm nuevas): `dist` swapeado, `/api/v1/forms` responde 401 (ruta viva).
+- **Worker** reconstruido con **reportlab** (`collect_all` en `comprepdf-worker.spec`): swapeado y
+  **verificado en QA** inyectando un job `form_generate` en MySQL → PDF AcroForm generado (`completed`).
+- **Frontend** build `qa` (nuevo `environment.qa.ts` + `fileReplacements`) copiado y `:8090` reiniciado.
+- **Data valiosa intacta**: 40 jobs `completed` + 6 usuarios. Durante la ventana desaparecieron 6 jobs
+  `failed` (housekeeping de un admin mientras QA estuvo accesible; presentes en el backup — se dejaron
+  borrados por decisión del usuario).
+- **Pendiente menor**: no se pudo hacer el E2E autenticado por la UI (TI cambió la contraseña de admin
+  de QA; no disponible desde la sesión) y borrar ~20 bats/logs temporales del share (cosmético; QA
+  cayó por su corte de red intermitente ICMP/HTTP conocido).
+
+---
+
 
 ## Contexto
 
