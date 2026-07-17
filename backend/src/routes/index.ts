@@ -6,7 +6,7 @@ import { login, register, me, changePassword } from '../controllers/auth.control
 import { requireAuth, requireRole } from '../middlewares/auth.middleware';
 import {
   splitPdf, mergePdfs, signPdf, extractPages,
-  rotatePages, protectPdf, unlockPdf,
+  rotatePages, protectPdf, unlockPdf, editPdf,
 } from '../controllers/pdf-operation.controller';
 import { getOverview, getDailyStats, getRecentJobs, getOperationStats, getCompressionLevelStats } from '../controllers/stats.controller';
 import { issueCertificate, listCertificates } from '../controllers/certificate.controller';
@@ -14,7 +14,7 @@ import { listUsers, createUser, updateUser } from '../controllers/user.controlle
 import {
   listForms, getForm, createForm, updateForm, deleteForm, generateForm, previewForm,
 } from '../controllers/form.controller';
-import { upload, uploadMultiple, uploadSign, enforceSignatureSizeLimit } from '../middlewares/upload.middleware';
+import { upload, uploadMultiple, uploadSign, uploadEdit, enforceSignatureSizeLimit } from '../middlewares/upload.middleware';
 import { validatePdfFile, validatePdfFiles, validateCompressionOptions, validateCertificateRequest } from '../middlewares/validation.middleware';
 
 const router = Router();
@@ -92,6 +92,17 @@ router.post(
   ]),
   enforceSignatureSizeLimit,
   signPdf,
+);
+// Edición de PDF: el PDF en 'file' + imágenes a estampar en 'images'; las
+// ediciones (texto/imagen/tapado) van como JSON en el campo 'edits'. Crea un job
+// 'pdf_edit' que se descarga por /jobs/:jobId/download.
+router.post(
+  '/pdf/edit',
+  uploadEdit.fields([
+    { name: 'file', maxCount: 1 },
+    { name: 'images', maxCount: 50 },
+  ]),
+  editPdf,
 );
 
 // Gestión de usuarios — SOLO admin.

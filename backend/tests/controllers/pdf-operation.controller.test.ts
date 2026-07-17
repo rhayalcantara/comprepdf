@@ -11,7 +11,7 @@ jest.mock('fs/promises', () => ({
 }));
 
 import fs from 'fs/promises';
-import { signPdf } from '../../src/controllers/pdf-operation.controller';
+import { signPdf, editPdf } from '../../src/controllers/pdf-operation.controller';
 import { AppDataSource } from '../../src/config/database';
 import { CompressionJob } from '../../src/models/job.model';
 import { ValidationError } from '../../src/utils/errors';
@@ -406,5 +406,147 @@ describe('signPdf controller', () => {
       await run();
       expectValidationError('PDF file (field "file") is required');
     });
+  });
+});
+
+describe('editPdf controller', () => {
+  let mockRequest: Partial<Request>;
+  let mockResponse: Partial<Response>;
+  let mockNext: NextFunction;
+  let jobRepo: { create: jest.Mock; save: jest.Mock };
+  let fileRepo: { create: jest.Mock; save: jest.Mock };
+  let diskContents: Record<string, Buffer>;
+
+  const pdfFile = () => mockFile('file', 'doc.pdf', 'application/pdf');
+  const imageFile = (n = 0) => mockFile('images', `img${n}.png`, 'image/png');
+  const savedJob = () => jobRepo.save.mock.calls[0][0];
+
+  beforeEach(() => {
+    mockResponse = { json: jest.fn(), status: jest.fn().mockReturnThis() };
+    mockNext = jest.fn();
+    jobRepo = { create: jest.fn((x) => x), save: jest.fn(async (x) => x) };
+    fileRepo = { create: jest.fn((x) => x), save: jest.fn(async (x) => x) };
+    (AppDataSource.getRepository as jest.Mock).mockImplementation((entity) =>
+      entity === CompressionJob ? jobRepo : fileRepo,
+    );
+    diskContents = { 'uploads/stored-file': PDF_BUFFER, 'uploads/stored-images': PNG_BUFFER };
+    (fs.readFile as jest.Mock).mockImplementation(async (p: string) => {
+      const c = diskContents[p];
+      if (!c) throw new Error(`ENOENT: ${p}`);
+      return c;
+    });
+    (fs.unlink as jest.Mock).mockResolvedValue(undefined);
+  });
+
+  afterEach(() => jest.clearAllMocks());
+
+  function buildRequest(files: { [field: string]: Express.Multer.File[] }, body: Record<string, unknown>): void {
+    mockRequest = { files: files as Request['files'], body };
+  }
+  async function run(): Promise<void> {
+    await editPdf(mockRequest as Request, mockResponse as Response, mockNext);
+  }
+  function expectValidationError(part: string): void {
+    expect(mockNext).toHaveBeenCalledTimes(1);
+    const error = (mockNext as jest.Mock).mock.calls[0][0];
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(error.message).toContain(part);
+    expect(jobRepo.save).not.toHaveBeenCalled();
+  }
+
+  const textEdit = (o: Record<string, unknown> = {}) =>
+    ({ type: 'text', page: 1, x: 0.1, y: 0.8, w: 0.4, h: 0.05, text: 'HOLA', ...o });
+
+  it('caso feliz: crea el job pdf_edit con las ediciones normalizadas', async () => {
+    buildRequest({ file: [pdfFile()] }, { edits: JSON.stringify([textEdit()]) });
+    await run();
+
+    expect(mockNext).not.toHaveBeenCalled();
+    const job = savedJob();
+    expect(job.operationType).toBe('pdf_edit');
+    expect(job.operationParams.edits).toHaveLength(1);
+    expect(job.operationParams.edits[0]).toEqual(
+      expect.objectContaining({ type: 'text', page: 1, x: 0.1, text: 'HOLA', font_size: 12 }),
+    );
+    expect(fs.unlink).not.toHaveBeenCalled();
+  });
+
+  it('acepta edits como valor ya parseado (no string)', async () => {
+    buildRequest({ file: [pdfFile()] }, { edits: [textEdit()] });
+    await run();
+    expect(savedJob().operationParams.edits).toHaveLength(1);
+  });
+
+  it('traduce image_index a image_path y registra solo el PDF como original', async () => {
+    const img = imageFile(0);
+    buildRequest({ file: [pdfFile()], images: [img] }, {
+      edits: JSON.stringify([{ type: 'image', page: 1, x: 0.5, y: 0.5, w: 0.2, h: 0.1, image_index: 0 }]),
+    });
+    await run();
+
+    const job = savedJob();
+    expect(job.operationParams.edits[0].image_path).toBe(path.resolve(img.path));
+    expect(job.operationParams.edits[0].image_index).toBeUndefined();
+    // Solo el PDF va como original (las imágenes NO se registran en `files`).
+    expect(fileRepo.save).toHaveBeenCalledTimes(1);
+    const originals = fileRepo.save.mock.calls[0][0];
+    expect(originals).toHaveLength(1);
+    expect(originals[0].originalFilename).toBe('doc.pdf');
+  });
+
+  it('sin PDF responde 400', async () => {
+    buildRequest({}, { edits: JSON.stringify([textEdit()]) });
+    await run();
+    expectValidationError('PDF file (field "file") is required');
+  });
+
+  it('edits no-JSON responde 400', async () => {
+    buildRequest({ file: [pdfFile()] }, { edits: '{no json' });
+    await run();
+    expectValidationError('edits must be valid JSON');
+  });
+
+  it('edits vacío responde 400', async () => {
+    buildRequest({ file: [pdfFile()] }, { edits: '[]' });
+    await run();
+    expectValidationError('At least one edit is required');
+  });
+
+  it.each([
+    ['tipo inválido', { type: 'sombra' }, 'invalid type'],
+    ['tipo redact (aún no en Fase A)', { type: 'redact' }, 'invalid type'],
+    ['x fuera de rango', { x: 1.5 }, 'must be a number between 0 and 1'],
+    ['h fuera de rango', { h: -0.1 }, 'must be a number between 0 and 1'],
+    ['página 0', { page: 0 }, 'invalid page'],
+    ['texto vacío en text', { text: '   ' }, 'needs a non-empty text'],
+    ['font_size muy grande', { font_size: 200 }, 'font_size must be between 4 and 96'],
+    ['color no hex', { color: 'rojo' }, 'color must be a hex'],
+  ])('rechaza %s con 400 y borra el PDF', async (_n, override, message) => {
+    const pdf = pdfFile();
+    buildRequest({ file: [pdf] }, { edits: JSON.stringify([textEdit(override)]) });
+    await run();
+    expectValidationError(message);
+    expect(fs.unlink).toHaveBeenCalledWith(pdf.path);
+  });
+
+  it('image_index fuera de rango responde 400', async () => {
+    buildRequest({ file: [pdfFile()], images: [imageFile()] }, {
+      edits: JSON.stringify([{ type: 'image', page: 1, x: 0.5, y: 0.5, w: 0.2, h: 0.1, image_index: 5 }]),
+    });
+    await run();
+    expectValidationError('references a missing image');
+  });
+
+  it('imagen con magic bytes inválidos responde 400 y borra todo', async () => {
+    const pdf = pdfFile();
+    const img = imageFile();
+    diskContents[img.path] = TEXT_BUFFER;
+    buildRequest({ file: [pdf], images: [img] }, {
+      edits: JSON.stringify([{ type: 'image', page: 1, x: 0.5, y: 0.5, w: 0.2, h: 0.1, image_index: 0 }]),
+    });
+    await run();
+    expectValidationError('Invalid signature image');
+    expect(fs.unlink).toHaveBeenCalledWith(pdf.path);
+    expect(fs.unlink).toHaveBeenCalledWith(img.path);
   });
 });

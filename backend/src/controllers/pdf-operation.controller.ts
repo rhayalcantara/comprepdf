@@ -326,6 +326,136 @@ export const signPdf = async (req: Request, res: Response, next: NextFunction): 
   }
 };
 
+// --- Edición de PDF (pdf_edit) ---
+
+/**
+ * Tipos de edición aceptados en la Fase A. `redact` (borrado real con PyMuPDF)
+ * se añadirá en la Fase B; hasta entonces se rechaza para no degradar en
+ * silencio un "borrar" a un "tapar".
+ */
+const EDIT_TYPES = ['text', 'image', 'whiteout'] as const;
+const MAX_EDITS = 200;
+const MAX_EDIT_TEXT = 2000;
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+
+function editFraction(value: unknown, field: string): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n) || n < 0 || n > 1) {
+    throw new ValidationError(`Edit ${field} must be a number between 0 and 1`);
+  }
+  return n;
+}
+
+/**
+ * Valida y normaliza una edición. Para `image`, `image_index` referencia una de
+ * las imágenes subidas; se traduce a `image_path` (como la firma) y el índice se
+ * descarta. Devuelve el objeto limpio que se persiste y se envía al worker.
+ */
+function validateEdit(raw: unknown, index: number, images: Express.Multer.File[]): Record<string, unknown> {
+  if (!raw || typeof raw !== 'object') {
+    throw new ValidationError(`Edit ${index + 1} is invalid`);
+  }
+  const e = raw as Record<string, unknown>;
+
+  const type = String(e.type ?? '');
+  if (!(EDIT_TYPES as readonly string[]).includes(type)) {
+    throw new ValidationError(`Edit ${index + 1} has an invalid type "${type}"`);
+  }
+
+  const page = typeof e.page === 'number' ? e.page : Number(e.page);
+  if (!Number.isInteger(page) || page < 1 || page > 10000) {
+    throw new ValidationError(`Edit ${index + 1} has an invalid page`);
+  }
+
+  const out: Record<string, unknown> = {
+    type,
+    page,
+    x: editFraction(e.x, 'x'),
+    y: editFraction(e.y, 'y'),
+    w: editFraction(e.w, 'w'),
+    h: editFraction(e.h, 'h'),
+  };
+
+  if (type === 'text' || type === 'whiteout') {
+    const text = String(e.text ?? '');
+    if (text.length > MAX_EDIT_TEXT) {
+      throw new ValidationError(`Edit ${index + 1} text is too long (max ${MAX_EDIT_TEXT})`);
+    }
+    if (type === 'text' && !text.trim()) {
+      throw new ValidationError(`Edit ${index + 1} (text) needs a non-empty text`);
+    }
+    out.text = text;
+
+    const fontSize = e.font_size === undefined ? 12 : Number(e.font_size);
+    if (!Number.isFinite(fontSize) || fontSize < 4 || fontSize > 96) {
+      throw new ValidationError(`Edit ${index + 1} font_size must be between 4 and 96`);
+    }
+    out.font_size = fontSize;
+
+    if (e.color !== undefined) {
+      if (!HEX_COLOR.test(String(e.color))) {
+        throw new ValidationError(`Edit ${index + 1} color must be a hex like #101828`);
+      }
+      out.color = String(e.color);
+    }
+    if (type === 'whiteout' && e.color_text !== undefined) {
+      if (!HEX_COLOR.test(String(e.color_text))) {
+        throw new ValidationError(`Edit ${index + 1} color_text must be a hex like #101828`);
+      }
+      out.color_text = String(e.color_text);
+    }
+  }
+
+  if (type === 'image') {
+    const imageIndex = typeof e.image_index === 'number' ? e.image_index : Number(e.image_index);
+    if (!Number.isInteger(imageIndex) || imageIndex < 0 || imageIndex >= images.length) {
+      throw new ValidationError(`Edit ${index + 1} references a missing image`);
+    }
+    out.image_path = path.resolve(images[imageIndex].path);
+  }
+
+  return out;
+}
+
+export const editPdf = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  const filesByField = req.files as { [field: string]: Express.Multer.File[] } | undefined;
+  const pdf = filesByField?.file?.[0];
+  const images = filesByField?.images ?? [];
+  try {
+    if (!pdf) throw new ValidationError('PDF file (field "file") is required');
+
+    let rawEdits: unknown;
+    try {
+      rawEdits = typeof req.body.edits === 'string' ? JSON.parse(req.body.edits) : req.body.edits;
+    } catch {
+      throw new ValidationError('edits must be valid JSON');
+    }
+    if (!Array.isArray(rawEdits) || rawEdits.length === 0) {
+      throw new ValidationError('At least one edit is required');
+    }
+    if (rawEdits.length > MAX_EDITS) {
+      throw new ValidationError(`Too many edits (max ${MAX_EDITS})`);
+    }
+
+    const edits = rawEdits.map((e, i) => validateEdit(e, i, images));
+
+    await assertIsPdf(pdf);
+    for (const img of images) {
+      await assertIsSignatureImage(img);
+    }
+
+    await createPdfJob(req, res, 'pdf_edit', {
+      edits,
+      output_name: sanitizeOutputName(req.body.outputName),
+    }, [pdf]);
+  } catch (error) {
+    if (error instanceof ValidationError) {
+      await cleanupUploads([pdf, ...images]);
+    }
+    next(error);
+  }
+};
+
 /** Acepta ranges como array JSON, array real, o string separado por comas. */
 function parseRanges(raw: unknown): string[] {
   if (!raw) return [];

@@ -32,7 +32,23 @@ export interface ApiResponse<T> {
 /** Operaciones conocidas (incluye `certificate`, emisión de admin). */
 export type OperationType =
   | 'compress' | 'split' | 'merge' | 'sign'
-  | 'extract' | 'rotate' | 'protect' | 'unlock' | 'certificate';
+  | 'extract' | 'rotate' | 'protect' | 'unlock' | 'certificate' | 'pdf_edit';
+
+/** Una edición a estampar sobre el PDF (convención de coordenadas de la firma). */
+export interface PdfEdit {
+  type: 'text' | 'image' | 'whiteout';
+  page: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  text?: string;
+  font_size?: number;
+  color?: string;
+  color_text?: string;
+  /** Índice dentro del array de imágenes subidas (solo type 'image'). */
+  image_index?: number;
+}
 
 /** Conteo agnóstico por operación (bloque `byOperation` del overview). */
 export interface OperationCount {
@@ -427,6 +443,26 @@ export class ApiService {
     }
     this.appendOutputName(formData, opts.outputName);
     return this.http.post<ApiResponse<JobResponse>>(`${this.baseUrl}/pdf/sign`, formData);
+  }
+
+  /**
+   * Edita un PDF estampando una lista de ediciones (texto, imagen, tapado).
+   * Las coordenadas de cada edición ya vienen normalizadas 0-1 con origen
+   * abajo-izquierda (convención PDF). Las imágenes van en `images` y cada
+   * edición de tipo 'image' las referencia por `image_index`.
+   */
+  editPdf(
+    file: File,
+    edits: PdfEdit[],
+    images: File[] = [],
+    outputName?: string,
+  ): Observable<ApiResponse<JobResponse>> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('edits', JSON.stringify(edits));
+    images.forEach((img, i) => formData.append('images', img, img.name || `img-${i}.png`));
+    this.appendOutputName(formData, outputName);
+    return this.http.post<ApiResponse<JobResponse>>(`${this.baseUrl}/pdf/edit`, formData);
   }
 
   getJobStatus(jobId: string): Observable<ApiResponse<CompressionJob>> {

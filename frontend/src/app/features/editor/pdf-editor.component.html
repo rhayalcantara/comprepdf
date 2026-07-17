@@ -1,0 +1,139 @@
+<div class="editor-toolbar">
+  <a class="back-link" routerLink="/">← Inicio</a>
+  <div class="doc-status" aria-live="polite">
+    <span class="status-dot" [class.busy]="busy"></span>{{ statusMessage || (file ? file.name : 'Editor de PDF') }}
+  </div>
+  <div class="toolbar-actions">
+    @if (doc) {
+      <button class="btn primary" type="button" (click)="apply()" [disabled]="busy || !elements.length">
+        Aplicar y descargar
+      </button>
+    }
+  </div>
+</div>
+
+@if (errorMessage) {
+  <div class="alert" role="alert">{{ errorMessage }}</div>
+}
+
+@if (!doc) {
+  <!-- Estado inicial: subir un PDF -->
+  <div class="dropzone"
+       (dragover)="$event.preventDefault()"
+       (drop)="onDrop($event)">
+    <div class="dropzone-inner">
+      <p class="eyebrow">Editor de PDF</p>
+      <h1>Sube un PDF para empezar a editar</h1>
+      <p>Añade texto o imágenes, o tapa lo que quieras cambiar. Todo se aplica sobre el documento y se descarga aplanado.</p>
+      <label class="btn primary file-btn">
+        <input type="file" accept="application/pdf" (change)="onFile($event)" hidden />
+        Elegir PDF
+      </label>
+      <span class="hint">…o arrastra el archivo aquí.</span>
+    </div>
+  </div>
+} @else {
+  <main class="workspace">
+    <!-- Panel izquierdo: herramientas + navegación -->
+    <aside class="panel tools-panel">
+      <div class="panel-heading"><p class="eyebrow">Herramientas</p><h2>Añadir</h2></div>
+      <div class="tool-grid">
+        <button type="button" (click)="addText()"><span>T</span> Texto</button>
+        <label class="tool-file">
+          <input type="file" accept="image/png,image/jpeg" (change)="onImage($event)" hidden />
+          <span>▣</span> Imagen
+        </label>
+        <button type="button" (click)="addWhiteout()"><span>▭</span> Tapar</button>
+      </div>
+
+      <div class="section-divider"></div>
+      <p class="section-label">Página</p>
+      <div class="page-nav">
+        <button type="button" (click)="goToPage(currentPage - 1)" [disabled]="currentPage <= 1">‹</button>
+        <span class="mono">{{ currentPage }} / {{ pageCount }}</span>
+        <button type="button" (click)="goToPage(currentPage + 1)" [disabled]="currentPage >= pageCount">›</button>
+      </div>
+      <p class="panel-hint">{{ elementsOnPage.length }} elemento(s) en esta página · {{ elements.length }} en total.</p>
+
+      <div class="section-divider"></div>
+      <label class="btn secondary full file-btn">
+        <input type="file" accept="application/pdf" (change)="onFile($event)" hidden />
+        Cambiar PDF
+      </label>
+    </aside>
+
+    <!-- Centro: página con los elementos superpuestos -->
+    <section class="canvas-column">
+      <div class="place-frame" #frame>
+        <canvas #pageCanvas></canvas>
+        @for (el of elementsOnPage; track el.id) {
+          <div class="el-box"
+               [class.selected]="selectedId === el.id"
+               [class.whiteout]="el.type === 'whiteout'"
+               [style.left.%]="el.left * 100"
+               [style.top.%]="el.top * 100"
+               [style.width.%]="el.width * 100"
+               [style.height.%]="el.height * 100"
+               (pointerdown)="startDrag($event, el, 'move')"
+               (pointermove)="onDragMove($event)"
+               (pointerup)="endDrag()"
+               (pointercancel)="endDrag()"
+               (click)="select(el)">
+            @switch (el.type) {
+              @case ('image') {
+                <img [src]="el.imageUrl" alt="" draggable="false" />
+              }
+              @default {
+                <span class="el-text" [style.color]="el.type === 'whiteout' ? el.textColor : el.color"
+                      [style.font-size.px]="el.fontSize">{{ el.text }}</span>
+              }
+            }
+            <span class="el-handle"
+                  (pointerdown)="startDrag($event, el, 'resize')"
+                  (pointermove)="onDragMove($event)"
+                  (pointerup)="endDrag()"
+                  (pointercancel)="endDrag()"></span>
+          </div>
+        }
+      </div>
+    </section>
+
+    <!-- Panel derecho: propiedades del elemento seleccionado -->
+    <aside class="panel props-panel">
+      @if (selected; as el) {
+        <div class="panel-heading props-heading">
+          <div><p class="eyebrow">Elemento</p><h2>{{ el.type === 'text' ? 'Texto' : el.type === 'image' ? 'Imagen' : 'Tapar y escribir' }}</h2></div>
+          <button class="icon-button danger" type="button" title="Eliminar" (click)="remove(el)">×</button>
+        </div>
+
+        @if (el.type !== 'image') {
+          <label class="field">
+            <span>{{ el.type === 'whiteout' ? 'Texto encima (opcional)' : 'Texto' }}</span>
+            <textarea rows="3" [(ngModel)]="el.text"></textarea>
+          </label>
+          <label class="field">
+            <span>Tamaño de letra</span>
+            <input type="number" min="4" max="96" [(ngModel)]="el.fontSize" />
+          </label>
+          <label class="field">
+            <span>Color del texto</span>
+            <input type="color" [(ngModel)]="el.type === 'whiteout' ? el.textColor : el.color" />
+          </label>
+          @if (el.type === 'whiteout') {
+            <label class="field">
+              <span>Color del recuadro</span>
+              <input type="color" [(ngModel)]="el.color" />
+            </label>
+          }
+        } @else {
+          <p class="panel-hint">Arrastra el recuadro para mover la imagen y la esquina para cambiar su tamaño. Mantiene su proporción.</p>
+        }
+      } @else {
+        <div class="empty-props">
+          <strong>Nada seleccionado</strong>
+          <span>Añade un elemento o selecciónalo en la página para editarlo.</span>
+        </div>
+      }
+    </aside>
+  </main>
+}

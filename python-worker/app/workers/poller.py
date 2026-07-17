@@ -22,6 +22,7 @@ from app.operations.pdf_ops import (
 from app.operations.sign import handle_sign
 from app.operations.certificate import handle_certificate
 from app.operations.form_generate import handle_form_generate
+from app.operations.pdf_edit import handle_pdf_edit
 
 HANDLERS = {
     'compress': handle_compress,
@@ -34,6 +35,7 @@ HANDLERS = {
     'sign': handle_sign,
     'certificate': handle_certificate,
     'form_generate': handle_form_generate,
+    'pdf_edit': handle_pdf_edit,
 }
 
 POLL_INTERVAL = 2  # segundos entre sondeos cuando no hay trabajo

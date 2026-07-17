@@ -51,6 +51,22 @@ const signFileFilter = (_req: Request, file: Express.Multer.File, cb: multer.Fil
 // Firma: PDF en 'file' + certificado en 'cert' + imagen dibujada en 'signature'
 export const uploadSign = multer({ storage, fileFilter: signFileFilter, limits });
 
+// Edición de PDF: 'file' debe ser PDF; 'images' (sellos/logos a estampar) solo
+// PNG/JPEG. El tamaño de cada imagen se acota luego en el controlador.
+const editFileFilter = (_req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+  if (file.fieldname === 'file' && file.mimetype !== 'application/pdf') {
+    cb(new ValidationError('The document must be a PDF file'));
+    return;
+  }
+  if (file.fieldname === 'images' && !SIGNATURE_MIMETYPES.includes(file.mimetype)) {
+    cb(new ValidationError('Images must be PNG or JPEG files'));
+    return;
+  }
+  cb(null, true);
+};
+
+export const uploadEdit = multer({ storage, fileFilter: editFileFilter, limits });
+
 /**
  * multer solo soporta `limits.fileSize` por instancia (aquí el máximo global
  * de config.upload.maxFileSizeMB, que sigue aplicando a 'file' y 'cert'), así

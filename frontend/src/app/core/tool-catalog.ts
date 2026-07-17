@@ -105,6 +105,16 @@ export const TOOL_CATALOG: ToolDef[] = [
     hueSoft: '#e0f5f2',
     cta: 'Crear formulario',
   },
+  {
+    id: 'editor',
+    route: '/editor',
+    icon: 'edit_document',
+    title: 'Editar PDF',
+    description: 'Añade texto o imágenes sobre el PDF, o tapa lo que quieras cambiar.',
+    hue: '#ea580c',
+    hueSoft: '#fdece1',
+    cta: 'Editar PDF',
+  },
 ];
 
 export function findTool(id: string): ToolDef | undefined {
