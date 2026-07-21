@@ -1,0 +1,82 @@
+<div class="organize-toolbar">
+  <a class="back-link" routerLink="/">← Inicio</a>
+  <div class="doc-status" aria-live="polite">
+    <span class="status-dot" [class.busy]="busy"></span>{{ statusMessage || (file ? file.name : 'Ordenar páginas') }}
+  </div>
+  <div class="toolbar-actions">
+    @if (doc) {
+      <button class="btn secondary" type="button" (click)="reset()" [disabled]="busy || !dirty">Restablecer</button>
+      <button class="btn primary" type="button" (click)="apply()" [disabled]="busy || !pages.length">
+        Ordenar y descargar
+      </button>
+    }
+  </div>
+</div>
+
+@if (errorMessage) {
+  <div class="alert" role="alert">{{ errorMessage }}</div>
+}
+
+@if (!doc) {
+  <!-- Estado inicial: subir un PDF -->
+  <div class="dropzone"
+       (dragover)="$event.preventDefault()"
+       (drop)="onDrop($event)">
+    <div class="dropzone-inner">
+      <p class="eyebrow">Ordenar páginas</p>
+      <h1>Sube un PDF para organizar sus páginas</h1>
+      <p>Arrastra las miniaturas para cambiar el orden, gíralas o elimina las que no quieras. Se aplica todo de una vez.</p>
+      <label class="btn primary file-btn">
+        <input type="file" accept="application/pdf" (change)="onFile($event)" hidden />
+        Elegir PDF
+      </label>
+      <span class="hint">…o arrastra el archivo aquí.</span>
+    </div>
+  </div>
+} @else {
+  <div class="summary">
+    <p class="panel-hint">
+      {{ pages.length }} página(s) en el documento final de {{ pageCount }} original(es)<!--
+      -->@if (removedCount) { · {{ removedCount }} eliminada(s) }
+    </p>
+    <div class="summary-actions">
+      <label class="field inline">
+        <span>Nombre de salida</span>
+        <input type="text" [(ngModel)]="outputName" placeholder="documento_organizado" />
+      </label>
+      <label class="btn secondary file-btn">
+        <input type="file" accept="application/pdf" (change)="onFile($event)" hidden />
+        Cambiar PDF
+      </label>
+    </div>
+  </div>
+
+  <p class="grid-hint">Arrastra una miniatura para moverla; usa ‹ › si prefieres el teclado.</p>
+
+  <ul class="page-grid">
+    @for (card of pages; track card.key; let i = $index) {
+      <li class="page-card"
+          [class.dragging]="dragIndex === i"
+          [class.drop-target]="dragOverIndex === i && dragIndex !== i"
+          draggable="true"
+          (dragstart)="onDragStart(i)"
+          (dragover)="onDragOver($event, i)"
+          (drop)="onDropCard($event, i)"
+          (dragend)="onDragEnd()">
+        <div class="thumb-box">
+          <canvas #thumb [style.transform]="'rotate(' + card.rotate + 'deg)'"></canvas>
+          <span class="position">{{ i + 1 }}</span>
+        </div>
+        <div class="card-foot">
+          <span class="origin" [title]="'Página ' + card.source + ' del original'">p. {{ card.source }}</span>
+          <span class="card-buttons">
+            <button type="button" title="Mover a la izquierda" (click)="move(i, -1)" [disabled]="i === 0">‹</button>
+            <button type="button" title="Girar 90°" (click)="rotate(i)">⟳</button>
+            <button type="button" class="danger" title="Eliminar página" (click)="remove(i)">×</button>
+            <button type="button" title="Mover a la derecha" (click)="move(i, 1)" [disabled]="i === pages.length - 1">›</button>
+          </span>
+        </div>
+      </li>
+    }
+  </ul>
+}

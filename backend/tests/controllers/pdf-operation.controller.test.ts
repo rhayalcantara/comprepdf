@@ -11,7 +11,7 @@ jest.mock('fs/promises', () => ({
 }));
 
 import fs from 'fs/promises';
-import { signPdf, editPdf } from '../../src/controllers/pdf-operation.controller';
+import { signPdf, editPdf, organizePdf } from '../../src/controllers/pdf-operation.controller';
 import { AppDataSource } from '../../src/config/database';
 import { CompressionJob } from '../../src/models/job.model';
 import { ValidationError } from '../../src/utils/errors';
@@ -548,5 +548,103 @@ describe('editPdf controller', () => {
     expectValidationError('Invalid signature image');
     expect(fs.unlink).toHaveBeenCalledWith(pdf.path);
     expect(fs.unlink).toHaveBeenCalledWith(img.path);
+  });
+});
+
+describe('organizePdf controller', () => {
+  let mockRequest: Partial<Request>;
+  let mockResponse: Partial<Response>;
+  let mockNext: NextFunction;
+  let jobRepo: { create: jest.Mock; save: jest.Mock };
+  let fileRepo: { create: jest.Mock; save: jest.Mock };
+
+  // organize usa upload.single('file') + validatePdfFile (como extract/rotate),
+  // así que el controlador recibe req.file, no req.files.
+  const pdfFile = () => mockFile('file', 'doc.pdf', 'application/pdf');
+  const savedJob = () => jobRepo.save.mock.calls[0][0];
+
+  beforeEach(() => {
+    mockResponse = { json: jest.fn(), status: jest.fn().mockReturnThis() };
+    mockNext = jest.fn();
+    jobRepo = { create: jest.fn((x) => x), save: jest.fn(async (x) => x) };
+    fileRepo = { create: jest.fn((x) => x), save: jest.fn(async (x) => x) };
+    (AppDataSource.getRepository as jest.Mock).mockImplementation((entity) =>
+      entity === CompressionJob ? jobRepo : fileRepo,
+    );
+  });
+
+  afterEach(() => jest.clearAllMocks());
+
+  /** Con `withFile: false` simula la petición sin archivo (multer no puso req.file). */
+  function buildRequest(body: Record<string, unknown>, withFile = true): void {
+    mockRequest = { file: withFile ? pdfFile() : undefined, body } as Partial<Request>;
+  }
+  async function run(): Promise<void> {
+    await organizePdf(mockRequest as Request, mockResponse as Response, mockNext);
+  }
+  function expectValidationError(part: string): void {
+    expect(mockNext).toHaveBeenCalledTimes(1);
+    const error = (mockNext as jest.Mock).mock.calls[0][0];
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(error.message).toContain(part);
+    expect(jobRepo.save).not.toHaveBeenCalled();
+  }
+
+  it('caso feliz: crea el job organize con la lista final de páginas', async () => {
+    buildRequest({ pages: JSON.stringify([{ source: 3, rotate: 90 }, { source: 1 }]) });
+    await run();
+
+    expect(mockNext).not.toHaveBeenCalled();
+    const job = savedJob();
+    expect(job.operationType).toBe('organize');
+    // El orden se respeta y `rotate` ausente vale 0.
+    expect(job.operationParams.pages).toEqual([{ source: 3, rotate: 90 }, { source: 1, rotate: 0 }]);
+  });
+
+  it('acepta pages como valor ya parseado (no string)', async () => {
+    buildRequest({ pages: [{ source: 2 }] });
+    await run();
+    expect(savedJob().operationParams.pages).toEqual([{ source: 2, rotate: 0 }]);
+  });
+
+  it('normaliza rotaciones negativas y mayores de 360', async () => {
+    buildRequest({ pages: [{ source: 1, rotate: -90 }, { source: 2, rotate: 450 }] });
+    await run();
+    expect(savedJob().operationParams.pages).toEqual([
+      { source: 1, rotate: 270 },
+      { source: 2, rotate: 90 },
+    ]);
+  });
+
+  it('guarda el outputName saneado', async () => {
+    buildRequest({ pages: [{ source: 1 }], outputName: 'mi orden' });
+    await run();
+    expect(savedJob().operationParams.output_name).toBe('mi orden');
+  });
+
+  it('sin PDF responde 400', async () => {
+    buildRequest({ pages: [{ source: 1 }] }, false);
+    await run();
+    expectValidationError('No file uploaded');
+  });
+
+  it.each([
+    ['pages no-JSON', { pages: '{no json' }, 'pages must be valid JSON'],
+    ['pages vacío', { pages: '[]' }, 'pages must be a non-empty array'],
+    ['pages no es lista', { pages: JSON.stringify({ source: 1 }) }, 'pages must be a non-empty array'],
+    ['source 0', { pages: [{ source: 0 }] }, 'invalid source'],
+    ['source no entero', { pages: [{ source: 1.5 }] }, 'invalid source'],
+    ['source ausente', { pages: [{ rotate: 90 }] }, 'invalid source'],
+    ['rotate no múltiplo de 90', { pages: [{ source: 1, rotate: 45 }] }, 'multiple of 90'],
+  ])('rechaza %s con 400', async (_n, body, message) => {
+    buildRequest(body);
+    await run();
+    expectValidationError(message);
+  });
+
+  it('rechaza más de 5000 páginas', async () => {
+    buildRequest({ pages: Array.from({ length: 5001 }, () => ({ source: 1 })) });
+    await run();
+    expectValidationError('Too many pages');
   });
 });

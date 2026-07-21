@@ -76,6 +76,16 @@ export const TOOL_CATALOG: ToolDef[] = [
     cta: 'Rotar páginas',
   },
   {
+    id: 'organize',
+    route: '/organizar',
+    icon: 'dashboard_customize',
+    title: 'Ordenar páginas',
+    description: 'Reordena, elimina o gira páginas arrastrando sus miniaturas.',
+    hue: '#6d28d9',
+    hueSoft: '#f0eafc',
+    cta: 'Ordenar páginas',
+  },
+  {
     id: 'protect',
     route: '/tools/protect',
     icon: 'lock',

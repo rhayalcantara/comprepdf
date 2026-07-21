@@ -190,6 +190,42 @@ export const rotatePages = async (req: Request, res: Response, next: NextFunctio
   }
 };
 
+/**
+ * Organiza las páginas: reordenar, eliminar y rotar en una sola pasada.
+ *
+ * `pages` es la lista FINAL de páginas (JSON), en el orden deseado: cada entrada
+ * dice de qué página del original sale (`source`, 1-based) y con qué rotación
+ * relativa (`rotate`, múltiplo de 90). Eliminar una página = no incluirla; la
+ * lista no puede quedar vacía porque un PDF sin páginas no es válido.
+ */
+export const organizePdf = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    if (!req.file) throw new ValidationError('No file uploaded');
+
+    let raw: unknown;
+    try {
+      raw = typeof req.body.pages === 'string' ? JSON.parse(req.body.pages) : req.body.pages;
+    } catch {
+      throw new ValidationError('pages must be valid JSON');
+    }
+    if (!Array.isArray(raw) || raw.length === 0) {
+      throw new ValidationError('pages must be a non-empty array');
+    }
+    if (raw.length > MAX_ORGANIZE_PAGES) {
+      throw new ValidationError(`Too many pages (max ${MAX_ORGANIZE_PAGES})`);
+    }
+
+    const pages = raw.map(validateOrganizePage);
+
+    await createPdfJob(req, res, 'organize', {
+      pages,
+      output_name: sanitizeOutputName(req.body.outputName),
+    }, [req.file]);
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const protectPdf = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     if (!req.file) throw new ValidationError('No file uploaded');
@@ -334,6 +370,30 @@ export const signPdf = async (req: Request, res: Response, next: NextFunction): 
  * silencio un "borrar" a un "tapar".
  */
 const EDIT_TYPES = ['text', 'image', 'whiteout'] as const;
+const MAX_ORGANIZE_PAGES = 5000;
+
+/**
+ * Valida una entrada de `pages` de la operación organize y la normaliza a
+ * `{ source, rotate }`. `source` es 1-based sobre el PDF original (el worker
+ * comprueba que exista de verdad); `rotate` se normaliza a 0/90/180/270, así que
+ * un -90 del frontend llega como 270.
+ */
+function validateOrganizePage(raw: unknown, index: number): { source: number; rotate: number } {
+  const p = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+
+  const source = typeof p.source === 'number' ? p.source : Number(p.source);
+  if (!Number.isInteger(source) || source < 1 || source > 10000) {
+    throw new ValidationError(`Page ${index + 1} has an invalid source`);
+  }
+
+  const rotate = p.rotate === undefined || p.rotate === '' ? 0 : Number(p.rotate);
+  if (!Number.isInteger(rotate) || rotate % 90 !== 0) {
+    throw new ValidationError(`Page ${index + 1} rotate must be a multiple of 90`);
+  }
+
+  return { source, rotate: ((rotate % 360) + 360) % 360 };
+}
+
 const MAX_EDITS = 200;
 const MAX_EDIT_TEXT = 2000;
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;

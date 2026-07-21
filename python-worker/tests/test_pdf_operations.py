@@ -139,6 +139,96 @@ def test_rotate(tmp_path):
         assert int(page.get('/Rotate', 0)) == 90
 
 
+def _tagged_pdf(path: Path, pages: int) -> None:
+    """PDF cuyas páginas son distinguibles: cada una lleva /TestId con su número.
+
+    Las páginas en blanco son idénticas entre sí, así que sin una marca no se
+    puede comprobar que organize respetó el ORDEN pedido.
+    """
+    pdf = pikepdf.new()
+    for i in range(pages):
+        pdf.add_blank_page(page_size=(612, 792))
+        pdf.pages[i].obj['/TestId'] = i + 1
+    pdf.save(path)
+
+
+def _tags(pdf) -> list:
+    return [int(page.obj['/TestId']) for page in pdf.pages]
+
+
+def test_organize_reorders_and_deletes(tmp_path):
+    src = tmp_path / 'in.pdf'
+    _tagged_pdf(src, 4)
+    cur = FakeCursor([_original(src)])
+    params = {'pages': [{'source': 3}, {'source': 1}, {'source': 4}]}
+    result = pdf_ops.handle_organize({'id': 'j1', 'operation_params': params}, cur)
+
+    assert result['pages_kept'] == 3
+    assert result['pages_removed'] == 1  # la página 2 no se incluyó
+    out = pikepdf.open(cur.output_paths()[0])
+    assert _tags(out) == [3, 1, 4]
+
+
+def test_organize_rotation_is_relative_to_the_page(tmp_path):
+    src = tmp_path / 'in.pdf'
+    _tagged_pdf(src, 2)
+    with pikepdf.open(src, allow_overwriting_input=True) as pdf:
+        pdf.pages[0].Rotate = 90  # la página ya venía girada
+        pdf.save(src)
+
+    cur = FakeCursor([_original(src)])
+    params = {'pages': [{'source': 1, 'rotate': 180}, {'source': 2, 'rotate': 0}]}
+    result = pdf_ops.handle_organize({'id': 'j1', 'operation_params': params}, cur)
+
+    assert result['pages_rotated'] == 1
+    out = pikepdf.open(cur.output_paths()[0])
+    assert int(out.pages[0].get('/Rotate', 0)) == 270  # 90 previo + 180
+    assert int(out.pages[1].get('/Rotate', 0)) == 0
+
+
+def test_organize_duplicated_page_rotates_independently(tmp_path):
+    """Una página repetida se copia de verdad: cada copia lleva su rotación."""
+    src = tmp_path / 'in.pdf'
+    _tagged_pdf(src, 2)
+    cur = FakeCursor([_original(src)])
+    params = {'pages': [{'source': 1, 'rotate': 0}, {'source': 1, 'rotate': 90}]}
+    result = pdf_ops.handle_organize({'id': 'j1', 'operation_params': params}, cur)
+
+    assert result['pages_kept'] == 2
+    assert result['pages_removed'] == 1  # la 2 se quedó fuera; la 1 va dos veces
+    out = pikepdf.open(cur.output_paths()[0])
+    assert _tags(out) == [1, 1]
+    assert int(out.pages[0].get('/Rotate', 0)) == 0
+    assert int(out.pages[1].get('/Rotate', 0)) == 90
+
+
+def test_organize_rejects_page_out_of_range(tmp_path):
+    src = tmp_path / 'in.pdf'
+    _tagged_pdf(src, 2)
+    cur = FakeCursor([_original(src)])
+    params = {'pages': [{'source': 5}]}
+    with pytest.raises(ValueError, match='out of range'):
+        pdf_ops.handle_organize({'id': 'j1', 'operation_params': params}, cur)
+
+
+def test_organize_rejects_empty_list(tmp_path):
+    src = tmp_path / 'in.pdf'
+    _tagged_pdf(src, 2)
+    cur = FakeCursor([_original(src)])
+    with pytest.raises(ValueError, match='No pages specified'):
+        pdf_ops.handle_organize({'id': 'j1', 'operation_params': {'pages': []}}, cur)
+
+
+def test_organize_custom_output_name(tmp_path):
+    src = tmp_path / 'in.pdf'
+    _tagged_pdf(src, 2)
+    cur = FakeCursor([_original(src)])
+    params = {'pages': [{'source': 2}], 'output_name': 'mi orden'}
+    pdf_ops.handle_organize({'id': 'j1', 'operation_params': params}, cur)
+
+    assert cur.output_paths()[0].name.endswith('mi orden.pdf')
+
+
 def test_protect_and_unlock(tmp_path):
     src = tmp_path / 'in.pdf'
     make_pdf(src, 2)

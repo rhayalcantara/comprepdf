@@ -1,4 +1,5 @@
-"""Operaciones PDF basadas en pikepdf: split, merge, extract, rotate, protect, unlock."""
+"""Operaciones PDF basadas en pikepdf: split, merge, extract, rotate, organize,
+protect, unlock."""
 import io
 import zipfile
 from pathlib import Path
@@ -167,6 +168,67 @@ def handle_rotate(job: Dict[str, Any], cursor) -> Dict[str, Any]:
     register_output(cursor, job_id, out_path,
                     download_name=out_name, mime_type='application/pdf')
     return {'files_output': 1, 'pages_rotated': len(indices), 'degrees': degrees}
+
+
+def handle_organize(job: Dict[str, Any], cursor) -> Dict[str, Any]:
+    """Reconstruye el PDF con la lista final de páginas (reordenar/eliminar/rotar).
+
+    `params['pages']` es esa lista en el orden de salida; cada entrada tiene
+    `source` (página del original, 1-based) y `rotate` (giro RELATIVO al que ya
+    tuviera la página, como en handle_rotate). Lo que el usuario elimina no
+    aparece en la lista, así que aquí no hay un "borrar": se copia lo que hay.
+    Una página repetida se duplica de verdad (pikepdf crea un objeto por copia),
+    por lo que cada copia puede llevar su propia rotación.
+    """
+    job_id = job['id']
+    params = parse_params(job)
+    original = get_single_original(cursor, job_id)
+    input_path = Path(original['file_path'])
+    base = stem(original['original_filename'])
+
+    pages = params.get('pages')
+    if not isinstance(pages, list) or not pages:
+        raise ValueError("No pages specified for organize")
+
+    out_name = f"{custom_basename(params) or base + '_organizado'}.pdf"
+    out_path = output_path(job_id, out_name)
+    rotated = 0
+    kept_sources = set()
+
+    with pikepdf.open(input_path) as src:
+        page_count = len(src.pages)
+        out = pikepdf.Pdf.new()
+        try:
+            for entry in pages:
+                if not isinstance(entry, dict):
+                    raise ValueError("Each organize page must be an object")
+                try:
+                    source = int(entry.get('source'))
+                except (TypeError, ValueError):
+                    raise ValueError("Organize page source must be an integer")
+                if not 1 <= source <= page_count:
+                    raise ValueError(
+                        f"Page {source} is out of range (the PDF has {page_count})")
+
+                out.pages.append(src.pages[source - 1])
+                kept_sources.add(source)
+                degrees = int(entry.get('rotate', 0) or 0) % 360
+                if degrees:
+                    if degrees % 90 != 0:
+                        raise ValueError("Rotation must be a multiple of 90 degrees")
+                    page = out.pages[-1]
+                    page.Rotate = (int(page.get('/Rotate', 0)) + degrees) % 360
+                    rotated += 1
+            out.save(out_path)
+        finally:
+            out.close()
+
+    register_output(cursor, job_id, out_path,
+                    download_name=out_name, mime_type='application/pdf')
+    # `pages_kept` cuenta la salida (una página duplicada suma dos) y
+    # `pages_removed` las del original que no sobrevivieron.
+    return {'files_output': 1, 'pages_kept': len(pages),
+            'pages_removed': page_count - len(kept_sources), 'pages_rotated': rotated}
 
 
 def handle_protect(job: Dict[str, Any], cursor) -> Dict[str, Any]:

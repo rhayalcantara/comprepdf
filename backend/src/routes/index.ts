@@ -6,7 +6,7 @@ import { login, register, me, changePassword } from '../controllers/auth.control
 import { requireAuth, requireRole } from '../middlewares/auth.middleware';
 import {
   splitPdf, mergePdfs, signPdf, extractPages,
-  rotatePages, protectPdf, unlockPdf, editPdf,
+  rotatePages, protectPdf, unlockPdf, editPdf, organizePdf,
 } from '../controllers/pdf-operation.controller';
 import { getOverview, getDailyStats, getRecentJobs, getOperationStats, getCompressionLevelStats } from '../controllers/stats.controller';
 import { issueCertificate, listCertificates } from '../controllers/certificate.controller';
@@ -81,6 +81,7 @@ router.post('/pdf/split', upload.single('file'), validatePdfFile, splitPdf);
 router.post('/pdf/merge', uploadMultiple.array('files', 50), validatePdfFiles, mergePdfs);
 router.post('/pdf/extract', upload.single('file'), validatePdfFile, extractPages);
 router.post('/pdf/rotate', upload.single('file'), validatePdfFile, rotatePages);
+router.post('/pdf/organize', upload.single('file'), validatePdfFile, organizePdf);
 router.post('/pdf/protect', upload.single('file'), validatePdfFile, protectPdf);
 router.post('/pdf/unlock', unlockPdf);
 router.post(

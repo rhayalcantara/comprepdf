@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ComprePDF is a PDF service (compression + operations) with a microservices architecture:
 - **Frontend**: Angular 17+ with Angular Material and TailwindCSS
 - **Backend API**: Node.js + Express + TypeScript
-- **PDF Worker**: Python + Ghostscript (compress) + pikepdf (split/merge/extract/rotate/protect/unlock) + pyHanko (digital signature)
+- **PDF Worker**: Python + Ghostscript (compress) + pikepdf (split/merge/extract/rotate/organize/protect/unlock) + pyHanko (digital signature)
 - **Database**: MySQL 8.0
 - **Cache**: Redis
 
@@ -123,6 +123,7 @@ POST   /api/v1/pdf/merge             # Merge multiple PDFs (field: files[]; opti
 POST   /api/v1/pdf/sign              # Sign: mode certificate (.pfx) | drawn (image) | combined
 POST   /api/v1/pdf/extract           # Extract pages (body: pages, e.g. "1-3,5")
 POST   /api/v1/pdf/rotate            # Rotate pages (body: degrees, pages)
+POST   /api/v1/pdf/organize          # Reorder/delete/rotate pages (body: pages JSON [{source,rotate}])
 POST   /api/v1/pdf/protect           # Add password (body: password)
 POST   /api/v1/pdf/unlock            # Remove password (body: password)
 POST   /api/v1/certificates          # (admin) Issue internal .pfx certificate

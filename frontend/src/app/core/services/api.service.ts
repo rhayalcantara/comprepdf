@@ -32,7 +32,17 @@ export interface ApiResponse<T> {
 /** Operaciones conocidas (incluye `certificate`, emisión de admin). */
 export type OperationType =
   | 'compress' | 'split' | 'merge' | 'sign'
-  | 'extract' | 'rotate' | 'protect' | 'unlock' | 'certificate' | 'pdf_edit';
+  | 'extract' | 'rotate' | 'protect' | 'unlock' | 'certificate' | 'pdf_edit' | 'organize';
+
+/**
+ * Una página del documento organizado, en el orden final de salida.
+ * `source` es la página del PDF original (1-based) y `rotate` el giro relativo
+ * que el usuario le aplicó (0, 90, 180 o 270). Eliminar una página = omitirla.
+ */
+export interface OrganizedPage {
+  source: number;
+  rotate: number;
+}
 
 /** Una edición a estampar sobre el PDF (convención de coordenadas de la firma). */
 export interface PdfEdit {
@@ -393,6 +403,19 @@ export class ApiService {
     formData.append('pages', pages);
     this.appendOutputName(formData, outputName);
     return this.http.post<ApiResponse<JobResponse>>(`${this.baseUrl}/pdf/rotate`, formData);
+  }
+
+  /**
+   * Organiza las páginas: `pages` es la lista FINAL en el orden deseado (las
+   * páginas eliminadas simplemente no van). Una operación cubre reordenar,
+   * eliminar y rotar.
+   */
+  organizePdf(file: File, pages: OrganizedPage[], outputName?: string): Observable<ApiResponse<JobResponse>> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('pages', JSON.stringify(pages));
+    this.appendOutputName(formData, outputName);
+    return this.http.post<ApiResponse<JobResponse>>(`${this.baseUrl}/pdf/organize`, formData);
   }
 
   protectPdf(file: File, password: string, ownerPassword?: string, outputName?: string): Observable<ApiResponse<JobResponse>> {

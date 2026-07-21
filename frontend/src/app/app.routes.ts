@@ -46,6 +46,11 @@ export const routes: Routes = [
     loadComponent: () => import('./features/editor/pdf-editor.component').then(m => m.PdfEditorComponent)
   },
   {
+    path: 'organizar',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/organize/pdf-organize.component').then(m => m.PdfOrganizeComponent)
+  },
+  {
     path: 'formularios',
     canActivate: [authGuard],
     loadComponent: () => import('./features/forms/form-list.component').then(m => m.FormListComponent)
