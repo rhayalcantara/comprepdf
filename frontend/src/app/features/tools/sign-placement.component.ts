@@ -25,6 +25,14 @@ export interface SignaturePlacement {
 /** Ancho mínimo del recuadro como fracción del ancho de página. */
 const MIN_W = 0.05;
 
+// Proporciones del sello respecto al ANCHO del recuadro. Son las mismas
+// constantes que usa el worker (`sign.py`, STAMP_*): si cambias una, cambia la
+// otra o la vista previa dejará de coincidir con el PDF. Aquí no se aplican los
+// topes en puntos (STAMP_FONT_MIN/MAX) porque en pantalla se trabaja en px.
+const STAMP_FONT_RATIO = 0.11;
+const STAMP_LEADING = 1.3;
+const STAMP_PADDING_RATIO = 0.4;
+
 const clamp = (v: number, lo: number, hi: number): number => Math.min(Math.max(v, lo), hi);
 
 /**
@@ -56,7 +64,21 @@ const clamp = (v: number, lo: number, hi: number): number => Math.min(Math.max(v
              (pointermove)="onDragMove($event)"
              (pointerup)="endDrag()"
              (pointercancel)="endDrag()">
-          <img [src]="imageUrl()" alt="Firma" draggable="false">
+          <span class="sig-img" [style.height.%]="imagePct()">
+            <img [src]="imageUrl()" alt="Firma" draggable="false">
+          </span>
+          @if (stampLines().length) {
+            <span class="sig-stamp"
+                  [class.bordered]="stampBorder()"
+                  [style.height.%]="100 - imagePct()"
+                  [style.color]="stampColor()"
+                  [style.border-color]="stampColor()"
+                  [style.font-size.px]="stampFontPx()">
+              @for (line of stampLines(); track $index) {
+                <span class="sig-stamp-line">{{ line }}</span>
+              }
+            </span>
+          }
           <span class="sig-handle"
                 aria-label="Redimensionar firma"
                 (pointerdown)="startDrag($event, 'resize')"
@@ -102,6 +124,13 @@ const clamp = (v: number, lo: number, hi: number): number => Math.min(Math.max(v
       user-select: none;
     }
 
+    .sig-box {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .sig-img { display: block; min-height: 0; }
+
     .sig-box img {
       display: block;
       width: 100%;
@@ -110,6 +139,26 @@ const clamp = (v: number, lo: number, hi: number): number => Math.min(Math.max(v
       pointer-events: none;
       user-select: none;
     }
+
+    /* El sello ocupa la parte baja del recuadro, igual que en el PDF. */
+    .sig-stamp {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 0;
+      overflow: hidden;
+      font-weight: 700;
+      line-height: 1.3;
+      white-space: nowrap;
+      pointer-events: none;
+      user-select: none;
+      box-sizing: border-box;
+    }
+
+    .sig-stamp.bordered { border: 1px solid currentColor; }
+
+    .sig-stamp-line { overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 
     .sig-handle {
       position: absolute;
@@ -134,6 +183,10 @@ export class SignPlacementComponent {
   imageUrl = input<string | null>(null);
   /** Aspect ratio alto/ancho de la imagen de la firma. */
   imageAspect = input(0.5);
+  /** Líneas del sello bajo la firma; vacío = sin sello. */
+  stampLines = input<string[]>([]);
+  stampColor = input('#B42318');
+  stampBorder = input(true);
   placementChange = output<SignaturePlacement>();
 
   // Fracciones con origen arriba-izquierda relativas a la página mostrada.
@@ -144,7 +197,35 @@ export class SignPlacementComponent {
   pageAspect = signal(Math.SQRT2);
   rendered = signal(false);
 
-  heightFrac = computed(() => this.widthFrac() * this.imageAspect() / this.pageAspect());
+  /** Ancho de la página renderizada en px, para dimensionar la letra del sello. */
+  private frameW = signal(600);
+
+  /** Alto de la imagen sola, en fracción del alto de página. */
+  private imageHeightFrac = computed(() =>
+    this.widthFrac() * this.imageAspect() / this.pageAspect());
+
+  /**
+   * Alto del sello en fracción del alto de página. Se deriva del ANCHO del
+   * recuadro con las mismas proporciones que el worker, por eso escala con la
+   * firma al redimensionarla.
+   */
+  private stampHeightFrac = computed(() => {
+    const n = this.stampLines().length;
+    if (!n) return 0;
+    const enAnchos = STAMP_FONT_RATIO * (2 * STAMP_PADDING_RATIO + n * STAMP_LEADING);
+    return this.widthFrac() * enAnchos / this.pageAspect();
+  });
+
+  /** Alto del CONJUNTO firma + sello (lo que se arrastra y se envía). */
+  heightFrac = computed(() => this.imageHeightFrac() + this.stampHeightFrac());
+
+  /** Reparto vertical dentro del recuadro: qué % ocupa la imagen. */
+  imagePct = computed(() => {
+    const total = this.heightFrac();
+    return total > 0 ? (this.imageHeightFrac() / total) * 100 : 100;
+  });
+
+  stampFontPx = computed(() => this.widthFrac() * this.frameW() * STAMP_FONT_RATIO);
 
   @ViewChild('pageCanvas', { static: true }) private canvasRef!: ElementRef<HTMLCanvasElement>;
   @ViewChild('frame', { static: true }) private frameRef!: ElementRef<HTMLDivElement>;
@@ -168,9 +249,12 @@ export class SignPlacementComponent {
     }, { allowSignalWrites: true });
     // Si cambia el aspect ratio (nueva firma / nueva página), mantener el
     // recuadro dentro de la página.
+    // Si cambia el aspect ratio o el sello (que suma altura), mantener el
+    // recuadro dentro de la página.
     effect(() => {
       this.imageAspect();
       this.pageAspect();
+      this.stampLines();
       this.clampBox();
     }, { allowSignalWrites: true });
     // Emitir la colocación en coordenadas PDF cada vez que cambia.
@@ -195,22 +279,30 @@ export class SignPlacementComponent {
       if (canvas.width > 0 && canvas.height > 0) {
         this.pageAspect.set(canvas.height / canvas.width);
       }
+      this.frameW.set(canvas.clientWidth || width);
       this.rendered.set(true);
     } catch {
       if (seq === this.renderSeq) this.rendered.set(false);
     }
   }
 
+  /** Alto del conjunto (imagen + sello) por unidad de ancho del recuadro. */
+  private heightPerWidth(): number {
+    const n = this.stampLines().length;
+    const stamp = n ? STAMP_FONT_RATIO * (2 * STAMP_PADDING_RATIO + n * STAMP_LEADING) : 0;
+    return this.imageAspect() + stamp;
+  }
+
   /** Máximo ancho posible sin que la altura derivada se salga de la página. */
   private maxWidthFrac(): number {
-    const byHeight = this.pageAspect() / this.imageAspect();
+    const byHeight = this.pageAspect() / this.heightPerWidth();
     return Math.min(1, byHeight);
   }
 
   private clampBox(): void {
     const w = clamp(this.widthFrac(), MIN_W, this.maxWidthFrac());
     this.widthFrac.set(w);
-    const h = w * this.imageAspect() / this.pageAspect();
+    const h = w * this.heightPerWidth() / this.pageAspect();
     this.leftFrac.set(clamp(this.leftFrac(), 0, 1 - w));
     this.topFrac.set(clamp(this.topFrac(), 0, Math.max(0, 1 - h)));
   }

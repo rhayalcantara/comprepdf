@@ -200,6 +200,9 @@
                         [page]="signCurrentPage()"
                         [imageUrl]="signImageUrl()"
                         [imageAspect]="signImageAspect()"
+                        [stampLines]="signStampLines()"
+                        [stampColor]="signStampColor()"
+                        [stampBorder]="signStampBorder()"
                         (placementChange)="onSignPlacement($event)" />
                     }
                   }
@@ -410,6 +413,71 @@
                 </div>
                 @if (signPagesScope() === 'range') {
                   <input class="input mono mt-2" [(ngModel)]="signPagesRange" placeholder="1,3-5">
+                }
+              </div>
+
+              <!-- Sello: texto y/o fecha bajo la firma, dentro del mismo recuadro -->
+              <div class="mt-5">
+                <label class="check-row">
+                  <input type="checkbox" [ngModel]="signStampOn()"
+                         (ngModelChange)="signStampOn.set($event)">
+                  <span class="field-label m-0">Añadir sello de texto</span>
+                </label>
+
+                @if (signStampOn()) {
+                  <div class="stamp-panel">
+                    <div class="chip-row">
+                      @for (preset of stampPresets; track preset) {
+                        <button type="button" class="chip"
+                                [class.active]="signStampText() === preset"
+                                (click)="useStampPreset(preset)">{{ preset }}</button>
+                      }
+                    </div>
+
+                    <label class="field">
+                      <span class="field-label">Texto</span>
+                      <input class="input" maxlength="60" placeholder="p. ej. AUTORIZADO"
+                             [ngModel]="signStampText()" (ngModelChange)="signStampText.set($event)">
+                    </label>
+
+                    <label class="check-row">
+                      <input type="checkbox" [ngModel]="signStampDatetime()"
+                             (ngModelChange)="signStampDatetime.set($event)">
+                      <span>Incluir fecha</span>
+                    </label>
+
+                    @if (signStampDatetime()) {
+                      <div class="seg-group" role="radiogroup" aria-label="Formato de la fecha">
+                        <button type="button" class="seg" [class.active]="signStampFormat() === 'datetime'"
+                                (click)="signStampFormat.set('datetime')">Fecha y hora</button>
+                        <button type="button" class="seg" [class.active]="signStampFormat() === 'date'"
+                                (click)="signStampFormat.set('date')">Solo fecha</button>
+                      </div>
+                      <p class="text-sm text-ink-soft mt-1 mb-0">
+                        La marca la pone el servidor al procesar el documento.
+                      </p>
+                    }
+
+                    <div class="mt-3">
+                      <span class="field-label">Color</span>
+                      <div class="chip-row">
+                        @for (c of stampColors; track c.hex) {
+                          <button type="button" class="color-chip"
+                                  [class.active]="signStampColor() === c.hex"
+                                  [style.background]="c.hex"
+                                  [title]="c.name"
+                                  [attr.aria-label]="c.name"
+                                  (click)="signStampColor.set(c.hex)"></button>
+                        }
+                      </div>
+                    </div>
+
+                    <label class="check-row mt-3">
+                      <input type="checkbox" [ngModel]="signStampBorder()"
+                             (ngModelChange)="signStampBorder.set($event)">
+                      <span>Recuadro alrededor del sello</span>
+                    </label>
+                  </div>
                 }
               </div>
 

@@ -336,6 +336,8 @@ export const signPdf = async (req: Request, res: Response, next: NextFunction): 
       params.x = x;
       params.y = y;
       params.w = w;
+      const stamp = parseStamp(req.body.stamp);
+      if (stamp) params.stamp = stamp;
     }
 
     if (needsCert) {
@@ -361,6 +363,67 @@ export const signPdf = async (req: Request, res: Response, next: NextFunction): 
     next(error);
   }
 };
+
+// --- Sello de texto bajo la firma dibujada ---
+
+const MAX_STAMP_TEXT = 60;
+const STAMP_FORMATS = ['datetime', 'date'] as const;
+
+/** Acepta 'true'/'false' además de booleanos (multipart manda todo como texto). */
+function parseBool(value: unknown): boolean {
+  return value === true || value === 'true' || value === '1';
+}
+
+/**
+ * Valida el sello opcional que acompaña a la firma dibujada y lo normaliza.
+ *
+ * La fecha NO viaja desde el navegador: aquí solo se dice SI se quiere y en qué
+ * formato; el worker la calcula al procesar, que es lo que la hace evidencia.
+ * Un sello sin etiqueta ni fecha es un error explícito, no un sello vacío.
+ */
+function parseStamp(raw: unknown): Record<string, unknown> | undefined {
+  if (raw === undefined || raw === null || raw === '') return undefined;
+
+  let parsed: unknown = raw;
+  if (typeof raw === 'string') {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new ValidationError('stamp must be valid JSON');
+    }
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new ValidationError('stamp must be an object');
+  }
+  const s = parsed as Record<string, unknown>;
+
+  const text = String(s.text ?? '').replace(/[\r\n]+/g, ' ').trim();
+  if (text.length > MAX_STAMP_TEXT) {
+    throw new ValidationError(`Stamp text is too long (max ${MAX_STAMP_TEXT})`);
+  }
+  const showDatetime = parseBool(s.show_datetime);
+  if (!text && !showDatetime) {
+    throw new ValidationError('Stamp needs a text or the date');
+  }
+
+  const format = String(s.datetime_format ?? 'datetime');
+  if (!(STAMP_FORMATS as readonly string[]).includes(format)) {
+    throw new ValidationError('Stamp datetime_format must be "datetime" or "date"');
+  }
+
+  const color = s.color === undefined || s.color === '' ? '#B42318' : String(s.color);
+  if (!HEX_COLOR.test(color)) {
+    throw new ValidationError('Stamp color must be a hex color like #B42318');
+  }
+
+  return {
+    text,
+    show_datetime: showDatetime,
+    datetime_format: format,
+    color,
+    border: parseBool(s.border),
+  };
+}
 
 // --- Edición de PDF (pdf_edit) ---
 

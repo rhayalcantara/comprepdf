@@ -160,6 +160,22 @@ export interface SignPlacement {
   w: number;
 }
 
+/**
+ * Sello de texto que acompaña a la firma dibujada, bajo la imagen y dentro del
+ * mismo recuadro. La fecha NO se manda desde aquí: solo se dice si se quiere y
+ * en qué formato, y el worker la calcula al procesar el documento (así el sello
+ * marca cuándo se selló de verdad).
+ */
+export interface SignStamp {
+  /** Etiqueta del sello (CANCELADO, AUTORIZADO, …). Máx. 60 caracteres. */
+  text: string;
+  show_datetime: boolean;
+  datetime_format: 'datetime' | 'date';
+  /** Color del texto y del borde, hex #RRGGBB. */
+  color: string;
+  border: boolean;
+}
+
 export interface SignOptions {
   mode?: SignMode;
   /** Certificado .pfx/.p12 (certificate y combined). */
@@ -175,6 +191,8 @@ export interface SignOptions {
   placement?: SignPlacement;
   /** 'all' o lista tipo "1,3-5" (drawn y combined). */
   pages?: string;
+  /** Sello de texto bajo la firma (drawn y combined); ausente = sin sello. */
+  stamp?: SignStamp;
   outputName?: string;
 }
 
@@ -456,6 +474,7 @@ export class ApiService {
         formData.append('w', opts.placement.w.toFixed(4));
       }
       formData.append('pages', opts.pages || 'all');
+      if (opts.stamp) formData.append('stamp', JSON.stringify(opts.stamp));
     }
     if (mode !== 'drawn') {
       if (opts.cert) formData.append('cert', opts.cert);

@@ -96,6 +96,63 @@
   }
 }
 
+/* --- Sello de texto de la firma dibujada --- */
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--ink);
+  cursor: pointer;
+
+  input { width: 16px; height: 16px; }
+}
+
+.stamp-panel {
+  margin-top: 0.75rem;
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--mist);
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.chip {
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink-soft);
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+
+  &:hover { color: var(--ink); border-color: var(--cobalt); }
+  &.active { background: var(--cobalt-soft); color: var(--cobalt); border-color: var(--cobalt); }
+}
+
+.color-chip {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  box-shadow: 0 0 0 1px var(--line);
+  cursor: pointer;
+
+  &.active { border-color: var(--paper); box-shadow: 0 0 0 2px var(--cobalt); }
+}
+
 .seg-group {
   display: flex;
   border: 1px solid var(--line);

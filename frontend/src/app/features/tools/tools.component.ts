@@ -7,7 +7,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { Observable, interval, switchMap, takeWhile } from 'rxjs';
-import { ApiService, ApiResponse, JobResponse } from '../../core/services/api.service';
+import { ApiService, ApiResponse, JobResponse, SignStamp } from '../../core/services/api.service';
 import { ToolDef, findTool } from '../../core/tool-catalog';
 import { PdfDocHandle, PdfPreviewService } from '../../shared/pdf-preview/pdf-preview.service';
 import { PdfPageGridComponent } from '../../shared/pdf-preview/pdf-page-grid.component';
@@ -36,6 +36,28 @@ const SIGN_PAGES_PATTERN = /^\d+(\s*-\s*\d+)?(\s*,\s*\d+(\s*-\s*\d+)?)*$/;
 
 /** Límite de la imagen de firma subida (el backend rechaza > 2MB). */
 const SIGN_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
+
+/** Etiquetas de sello más habituales (el texto sigue siendo libre). */
+const STAMP_PRESETS = ['AUTORIZADO', 'CANCELADO', 'ANULADO', 'RECIBIDO', 'PAGADO', 'REVISADO'];
+
+/** Paleta del sello (el backend acepta cualquier hex; esto son los atajos). */
+const STAMP_COLORS = [
+  { name: 'Rojo', hex: '#B42318' },
+  { name: 'Verde', hex: '#027A48' },
+  { name: 'Azul', hex: '#1D4ED8' },
+  { name: 'Negro', hex: '#101828' },
+] as const;
+
+/** Mismo tope que el backend (`MAX_STAMP_TEXT`). */
+const MAX_STAMP_TEXT = 60;
+
+/** dd/mm/aaaa [hh:mm] — mismo formato que produce el worker. */
+function formatStampDate(format: 'datetime' | 'date'): string {
+  const now = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  const fecha = `${p(now.getDate())}/${p(now.getMonth() + 1)}/${now.getFullYear()}`;
+  return format === 'date' ? fecha : `${fecha} ${p(now.getHours())}:${p(now.getMinutes())}`;
+}
 
 /** dataURL (base64) → Blob, para enviar el PNG del canvas por multipart. */
 function dataUrlToBlob(dataUrl: string): Blob {
@@ -193,6 +215,29 @@ export class ToolsComponent implements OnDestroy {
   signImageAspect = computed(() =>
     this.signSource() === 'draw' ? this.signDrawnAspect() : this.signUploadAspect());
 
+  // Sello de texto bajo la firma (drawn/combined). La fecha la pone el worker
+  // al procesar: aquí solo se elige si se incluye y con qué formato.
+  signStampOn = signal(false);
+  signStampText = signal('');
+  signStampDatetime = signal(true);
+  signStampFormat = signal<'datetime' | 'date'>('datetime');
+  signStampColor = signal<string>(STAMP_COLORS[0].hex);
+  signStampBorder = signal(true);
+  readonly stampPresets = STAMP_PRESETS;
+  readonly stampColors = STAMP_COLORS;
+
+  /** Líneas que se verán en el PDF; alimenta también la vista previa. */
+  signStampLines = computed<string[]>(() => {
+    if (!this.signStampOn()) return [];
+    const lines: string[] = [];
+    const text = this.signStampText().replace(/[\r\n]+/g, ' ').trim();
+    if (text) lines.push(text.slice(0, MAX_STAMP_TEXT));
+    // En la vista previa la fecha es la del navegador; el PDF llevará la del
+    // servidor al procesarse (pueden diferir en segundos, no en formato).
+    if (this.signStampDatetime()) lines.push(formatStampDate(this.signStampFormat()));
+    return lines;
+  });
+
   private signaturePad: SignaturePad | null = null;
   private sigCanvasEl: HTMLCanvasElement | null = null;
   /** Trazos guardados para restaurar el lienzo cuando se re-crea (cambio de pestaña). */
@@ -231,6 +276,8 @@ export class ToolsComponent implements OnDestroy {
       this.signPassword = '';
       this.signReason = '';
       this.signLocation = '';
+      this.signStampOn.set(false);
+      this.signStampText.set('');
       void this.loadPreview(null);
     });
   }
@@ -673,6 +720,32 @@ export class ToolsComponent implements OnDestroy {
     this.run(this.api.unlockPdf(this.unlockFile, this.unlockPassword, this.outName()));
   }
 
+  /** Aplica una etiqueta de atajo al texto del sello. */
+  useStampPreset(preset: string): void {
+    this.signStampText.set(preset);
+    this.signStampOn.set(true);
+  }
+
+  /**
+   * Sello a enviar: `undefined` si está desactivado, `null` si está activado
+   * pero no lleva ni etiqueta ni fecha (error: el backend lo rechazaría).
+   */
+  private buildStamp(): SignStamp | undefined | null {
+    if (!this.signStampOn()) return undefined;
+    const text = this.signStampText().replace(/[\r\n]+/g, ' ').trim().slice(0, MAX_STAMP_TEXT);
+    if (!text && !this.signStampDatetime()) {
+      this.warn('El sello necesita un texto o la fecha');
+      return null;
+    }
+    return {
+      text,
+      show_datetime: this.signStampDatetime(),
+      datetime_format: this.signStampFormat(),
+      color: this.signStampColor(),
+      border: this.signStampBorder(),
+    };
+  }
+
   private runSign(): void {
     if (!this.signFile) return this.warn('Selecciona un PDF');
     const mode = this.signMode();
@@ -703,12 +776,16 @@ export class ToolsComponent implements OnDestroy {
     const pages = this.resolveSignPages();
     if (pages === null) return;
 
+    const stamp = this.buildStamp();
+    if (stamp === null) return;  // sello activado pero vacío: ya avisó
+
     this.run(this.api.signPdf(this.signFile, {
       mode,
       signature: signature.blob,
       signatureFilename: signature.filename,
       placement: this.signPlacement,
       pages,
+      ...(stamp ? { stamp } : {}),
       ...(mode === 'combined'
         ? {
             cert: this.signCert!,

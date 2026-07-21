@@ -413,3 +413,126 @@ def test_drawn_custom_output_name(tmp_path):
     cur, _ = _run_drawn(tmp_path, pdf_pages=1, pages='1',
                         output_name='contrato firmado')
     assert cur.inserts[0][3] == 'contrato firmado.pdf'
+
+
+# --- sello de texto bajo la firma ---
+
+def _overlay_content(page) -> str:
+    """Contenido de los Form XObject de la página (donde va el sello)."""
+    resources = page.obj.get('/Resources')
+    xobjects = resources.get('/XObject') if resources is not None else None
+    if xobjects is None:
+        return ''
+    blobs = []
+    for key in xobjects.keys():
+        xobj = xobjects[key]
+        if xobj.get('/Subtype') == pikepdf.Name.Form:
+            blobs.append(bytes(xobj.read_bytes()))
+    return b'\n'.join(blobs).decode('latin-1')
+
+
+def _overlay_texts(page):
+    """Cadenas dibujadas en el sello, en orden."""
+    return re.findall(r'\((.*?)\)\s*Tj', _overlay_content(page))
+
+
+def _first_page(cur):
+    """Primera página del PDF de salida.
+
+    Devuelve también el Pdf: si no se retiene, pikepdf lo cierra al recolectarlo
+    y la página queda inutilizable ("Object was inside a closed Pdf").
+    """
+    pdf = pikepdf.open(cur.output_paths()[0])
+    return pdf, pdf.pages[0]
+
+
+def _subdir(tmp_path, name):
+    """Subcarpeta propia para poder correr dos estampados en el mismo test."""
+    path = tmp_path / name
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def test_stamp_draws_label_and_datetime(tmp_path):
+    cur, _ = _run_drawn(tmp_path, pdf_pages=1, pages='1',
+                        stamp={'text': 'AUTORIZADO', 'show_datetime': True})
+    out = pikepdf.open(cur.output_paths()[0])
+    texts = _overlay_texts(out.pages[0])
+    assert texts[0] == 'AUTORIZADO'
+    # La fecha la pone el worker al procesar, no el navegador.
+    assert texts[1] == datetime.datetime.now().strftime('%d/%m/%Y %H:%M')
+
+
+def test_stamp_date_only_format(tmp_path):
+    cur, _ = _run_drawn(tmp_path, pdf_pages=1, pages='1',
+                        stamp={'show_datetime': True, 'datetime_format': 'date'})
+    _pdf, page = _first_page(cur)
+    assert _overlay_texts(page) == [datetime.datetime.now().strftime('%d/%m/%Y')]
+
+
+def test_stamp_lifts_the_image_and_keeps_the_unit_inside_the_page(tmp_path):
+    """(x,y) es la esquina del CONJUNTO: la imagen sube el alto del sello."""
+    sin_sello, _ = _run_drawn(_subdir(tmp_path, 'a'), pdf_pages=1, pages='1', x=0.1, y=0.0, w=0.3)
+    con_sello, _ = _run_drawn(_subdir(tmp_path, 'b'), pdf_pages=1, pages='1', x=0.1, y=0.0, w=0.3,
+                              stamp={'text': 'AUTORIZADO', 'show_datetime': True})
+    _p0, page0 = _first_page(sin_sello)
+    _p1, page1 = _first_page(con_sello)
+    w0, h0, x0, y0, _ = _stamp(page0)
+    w1, h1, x1, y1, _ = _stamp(page1)
+
+    # Misma imagen y misma x; la y sube exactamente el alto del sello.
+    assert (w1, h1, x1) == pytest.approx((w0, h0, x0))
+    # 2 líneas: 2*padding + 2*leading*font, con font = 0.11*183.6 = 20.196
+    font = 183.6 * 0.11
+    assert y1 - y0 == pytest.approx(2 * font * 0.4 + 2 * font * 1.3)
+
+
+def test_stamp_clamped_at_the_top_of_the_page(tmp_path):
+    """Con y=1 el conjunto entero (imagen + sello) sigue dentro de la página."""
+    cur, _ = _run_drawn(tmp_path, pdf_pages=1, pages='1', x=0.0, y=1.0, w=0.3,
+                        stamp={'text': 'CANCELADO', 'show_datetime': True})
+    _pdf, page = _first_page(cur)
+    _w, h, _x, y, _n = _stamp(page)
+    assert y + h == pytest.approx(792.0)  # la imagen toca el borde superior
+
+
+def test_stamp_long_text_is_truncated_with_ellipsis(tmp_path):
+    largo = 'AUTORIZADO POR LA GERENCIA GENERAL DE OPERACIONES'
+    cur, _ = _run_drawn(tmp_path, pdf_pages=1, pages='1', w=0.2, stamp={'text': largo})
+    _pdf, page = _first_page(cur)
+    texts = _overlay_texts(page)
+    assert texts[0].endswith('\\205')  # … escapado en WinAnsi por reportlab
+    assert len(texts[0]) < len(largo)
+
+
+def test_stamp_absent_leaves_the_page_without_overlay(tmp_path):
+    """Sin sello no se toca nada del camino de siempre: ni overlay ni cambios."""
+    cur, _ = _run_drawn(tmp_path, pdf_pages=1, pages='1')
+    _pdf, page = _first_page(cur)
+    assert _overlay_content(page) == ''
+
+
+def test_stamp_empty_text_without_datetime_is_ignored(tmp_path):
+    cur, _ = _run_drawn(tmp_path, pdf_pages=1, pages='1', stamp={'text': '   '})
+    _pdf, page = _first_page(cur)
+    assert _overlay_content(page) == ''
+
+
+def test_stamp_border_is_drawn_when_requested(tmp_path):
+    con, _ = _run_drawn(_subdir(tmp_path, 'a'), pdf_pages=1, pages='1',
+                        stamp={'text': 'ANULADO', 'border': True})
+    sin, _ = _run_drawn(_subdir(tmp_path, 'b'), pdf_pages=1, pages='1',
+                        stamp={'text': 'ANULADO', 'border': False})
+    _p1, con_page = _first_page(con)
+    _p2, sin_page = _first_page(sin)
+    assert ' re' in _overlay_content(con_page)
+    assert ' re' not in _overlay_content(sin_page)
+
+
+def test_stamp_accents_survive(tmp_path):
+    cur, _ = _run_drawn(tmp_path, pdf_pages=1, pages='1', w=0.5,
+                        stamp={'text': 'RECIBIÓ: José Ñ'})
+    _pdf, page = _first_page(cur)
+    content = _overlay_content(page)
+    assert '\\323' in content  # Ó en WinAnsi (octal 323)
+    assert '\\321' in content  # Ñ

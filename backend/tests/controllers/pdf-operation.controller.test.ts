@@ -250,6 +250,80 @@ describe('signPdf controller', () => {
       expect(savedJob().operationParams.pages).toBe('all');
     });
 
+    describe('sello de texto', () => {
+      const withStamp = (stamp: unknown) =>
+        buildRequest({ file: [pdfFile()], signature: [signatureFile()] },
+          drawnBody({ stamp: typeof stamp === 'string' ? stamp : JSON.stringify(stamp) }));
+
+      it('normaliza el sello y lo guarda en operation_params', async () => {
+        withStamp({ text: '  AUTORIZADO  ', show_datetime: true, border: true, color: '#027A48' });
+        await run();
+
+        expect(mockNext).not.toHaveBeenCalled();
+        expect(savedJob().operationParams.stamp).toEqual({
+          text: 'AUTORIZADO',
+          show_datetime: true,
+          datetime_format: 'datetime',
+          color: '#027A48',
+          border: true,
+        });
+      });
+
+      it('la fecha NO viaja desde el navegador: solo si se quiere y su formato', async () => {
+        withStamp({ text: 'RECIBIDO', show_datetime: true, datetime_format: 'date', datetime: '01/01/2000' });
+        await run();
+        const stamp = savedJob().operationParams.stamp as Record<string, unknown>;
+        expect(stamp.datetime_format).toBe('date');
+        expect(stamp).not.toHaveProperty('datetime');
+      });
+
+      it('acepta booleanos como texto (multipart) y aplica los valores por defecto', async () => {
+        withStamp({ text: 'ANULADO', show_datetime: 'false', border: 'true' });
+        await run();
+        expect(savedJob().operationParams.stamp).toEqual({
+          text: 'ANULADO',
+          show_datetime: false,
+          datetime_format: 'datetime',
+          color: '#B42318',
+          border: true,
+        });
+      });
+
+      it('acepta el sello ya parseado (no string)', async () => {
+        buildRequest({ file: [pdfFile()], signature: [signatureFile()] },
+          drawnBody({ stamp: { text: 'PAGADO' } }));
+        await run();
+        expect((savedJob().operationParams.stamp as Record<string, unknown>).text).toBe('PAGADO');
+      });
+
+      it('sin sello no añade la clave stamp', async () => {
+        buildRequest({ file: [pdfFile()], signature: [signatureFile()] }, drawnBody());
+        await run();
+        expect(savedJob().operationParams.stamp).toBeUndefined();
+      });
+
+      it.each([
+        ['stamp no-JSON', '{no json', 'stamp must be valid JSON'],
+        ['sello vacío (ni texto ni fecha)', JSON.stringify({ text: '   ' }), 'needs a text or the date'],
+        ['texto muy largo', JSON.stringify({ text: 'A'.repeat(61) }), 'too long'],
+        ['formato inválido', JSON.stringify({ text: 'X', datetime_format: 'epoch' }), 'datetime_format'],
+        ['color no hex', JSON.stringify({ text: 'X', color: 'rojo' }), 'hex color'],
+        ['stamp es un array', JSON.stringify([{ text: 'X' }]), 'stamp must be an object'],
+      ])('rechaza %s con 400 y borra los archivos subidos', async (_n, stamp, message) => {
+        const pdf = pdfFile();
+        const sig = signatureFile();
+        buildRequest({ file: [pdf], signature: [sig] }, drawnBody({ stamp }));
+        await run();
+
+        expect(mockNext).toHaveBeenCalledTimes(1);
+        const error = (mockNext as jest.Mock).mock.calls[0][0];
+        expect(error).toBeInstanceOf(ValidationError);
+        expect(error.message).toContain(message);
+        expect(fs.unlink).toHaveBeenCalledWith(pdf.path);
+        expect(fs.unlink).toHaveBeenCalledWith(sig.path);
+      });
+    });
+
     it('acepta una imagen JPEG (magic bytes \\xFF\\xD8)', async () => {
       const sig = signatureFile();
       diskContents[sig.path] = JPEG_BUFFER;
