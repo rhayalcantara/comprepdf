@@ -19,7 +19,7 @@ logging.getLogger('pdf2docx').setLevel(logging.ERROR)
 
 def convert_pdf_to_word(input_path: Path, output_path: Path) -> None:
     """Convierte un PDF a .docx. Lanza ValueError con mensaje claro si no se puede."""
-    _assert_convertible(input_path)
+    assert_pdf_extractable(input_path)
 
     converter = Converter(str(input_path))
     try:
@@ -37,8 +37,9 @@ def convert_pdf_to_word(input_path: Path, output_path: Path) -> None:
             raise ValueError('Conversion did not produce a valid Word document')
 
 
-def _assert_convertible(input_path: Path) -> None:
-    """Rechaza con mensaje claro los PDFs que no pueden reconstruirse."""
+def assert_pdf_extractable(input_path: Path) -> None:
+    """Rechaza con mensaje claro los PDFs sin texto extraíble (cifrados o
+    escaneados). Compartida por pdf_to_word y pdf_to_excel."""
     try:
         doc = fitz.open(str(input_path))
     except Exception:

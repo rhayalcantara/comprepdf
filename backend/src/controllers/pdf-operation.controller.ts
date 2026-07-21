@@ -107,6 +107,21 @@ export const pdfToWord = async (req: Request, res: Response, next: NextFunction)
   }
 };
 
+/**
+ * PDF → Excel (.xlsx): extracción de tablas. Mismo pipeline mínimo que
+ * pdfToWord; la detección de tablas/cifrado/escaneado la hace el worker.
+ */
+export const pdfToExcel = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    if (!req.file) throw new ValidationError('No file uploaded');
+    await createPdfJob(req, res, 'pdf_to_excel', {
+      output_name: sanitizeOutputName(req.body.outputName),
+    }, [req.file]);
+  } catch (error) {
+    next(error);
+  }
+};
+
 // --- Conversión a PDF (convert) ---
 
 /**

@@ -23,7 +23,7 @@ import {
 import { SignPlacementComponent, SignaturePlacement } from './sign-placement.component';
 import { MergeBuilderComponent, MergeEntry } from './merge-builder.component';
 
-type SingleFileField = 'splitFile' | 'extractFile' | 'rotateFile' | 'protectFile' | 'unlockFile' | 'signFile' | 'signCert' | 'convertFile' | 'pdfToWordFile';
+type SingleFileField = 'splitFile' | 'extractFile' | 'rotateFile' | 'protectFile' | 'unlockFile' | 'signFile' | 'signCert' | 'convertFile' | 'pdfToWordFile' | 'pdfToExcelFile';
 
 /** Extensiones que acepta la conversión a PDF (espejo del backend, uploadConvert). */
 const CONVERT_EXTENSIONS = [
@@ -201,6 +201,9 @@ export class ToolsComponent implements OnDestroy {
   // PDF a Word
   pdfToWordFile: File | null = null;
 
+  // PDF a Excel
+  pdfToExcelFile: File | null = null;
+
   // Sign
   signFile: File | null = null;
   signCert: File | null = null;
@@ -313,6 +316,7 @@ export class ToolsComponent implements OnDestroy {
       case 'sign': return this.signFile;
       case 'convert': return this.convertFile;
       case 'pdf-to-word': return this.pdfToWordFile;
+      case 'pdf-to-excel': return this.pdfToExcelFile;
       default: return null;
     }
   }
@@ -345,6 +349,7 @@ export class ToolsComponent implements OnDestroy {
       case 'sign': this.signFile = file; break;
       case 'convert': this.convertFile = file; break;
       case 'pdf-to-word': this.pdfToWordFile = file; break;
+      case 'pdf-to-excel': this.pdfToExcelFile = file; break;
     }
     this.hasMainFile.set(!!file);
     if (PREVIEW_TOOLS.includes(this.toolId())) {
@@ -666,6 +671,7 @@ export class ToolsComponent implements OnDestroy {
       case 'unlock': return this.runUnlock();
       case 'convert': return this.runConvert();
       case 'pdf-to-word': return this.runPdfToWord();
+      case 'pdf-to-excel': return this.runPdfToExcel();
     }
   }
 
@@ -790,6 +796,11 @@ export class ToolsComponent implements OnDestroy {
   private runPdfToWord(): void {
     if (!this.pdfToWordFile) return this.warn('Selecciona un PDF');
     this.run(this.api.pdfToWord(this.pdfToWordFile, this.outName()));
+  }
+
+  private runPdfToExcel(): void {
+    if (!this.pdfToExcelFile) return this.warn('Selecciona un PDF');
+    this.run(this.api.pdfToExcel(this.pdfToExcelFile, this.outName()));
   }
 
   private runSign(): void {

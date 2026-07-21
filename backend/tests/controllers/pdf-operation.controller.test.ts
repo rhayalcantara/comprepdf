@@ -11,7 +11,7 @@ jest.mock('fs/promises', () => ({
 }));
 
 import fs from 'fs/promises';
-import { signPdf, editPdf, organizePdf, convertToPdf, pdfToWord } from '../../src/controllers/pdf-operation.controller';
+import { signPdf, editPdf, organizePdf, convertToPdf, pdfToWord, pdfToExcel } from '../../src/controllers/pdf-operation.controller';
 import { AppDataSource } from '../../src/config/database';
 import { CompressionJob } from '../../src/models/job.model';
 import { ValidationError } from '../../src/utils/errors';
@@ -860,6 +860,26 @@ describe('pdfToWord controller', () => {
     const job = jobRepo.save.mock.calls[0][0];
     expect(job.operationType).toBe('pdf_to_word');
     expect(job.operationParams.output_name).toBe('contrato editable');
+  });
+
+  it('pdfToExcel: crea el job pdf_to_excel (mismo pipeline)', async () => {
+    mockRequest = {
+      file: mockFile('file', 'cartera.pdf', 'application/pdf'),
+      body: { outputName: 'tablas' },
+    } as Partial<Request>;
+    await pdfToExcel(mockRequest as Request, mockResponse as Response, mockNext);
+
+    expect(mockNext).not.toHaveBeenCalled();
+    const job = jobRepo.save.mock.calls[0][0];
+    expect(job.operationType).toBe('pdf_to_excel');
+    expect(job.operationParams.output_name).toBe('tablas');
+  });
+
+  it('pdfToExcel: sin archivo responde 400', async () => {
+    mockRequest = { file: undefined, body: {} } as Partial<Request>;
+    await pdfToExcel(mockRequest as Request, mockResponse as Response, mockNext);
+    expect((mockNext as jest.Mock).mock.calls[0][0]).toBeInstanceOf(ValidationError);
+    expect(jobRepo.save).not.toHaveBeenCalled();
   });
 
   it('sin archivo responde 400', async () => {

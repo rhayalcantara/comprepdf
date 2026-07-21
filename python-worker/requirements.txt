@@ -16,3 +16,6 @@ python-dotenv==1.0.0
 pywin32==306; sys_platform == "win32"
 # PDF -> Word (operacion pdf_to_word). Trae PyMuPDF, python-docx y opencv-headless.
 pdf2docx==0.5.13
+# PDF -> Excel (operacion pdf_to_excel): escribe el .xlsx; las tablas las
+# detecta el PyMuPDF que ya trae pdf2docx.
+openpyxl==3.1.5

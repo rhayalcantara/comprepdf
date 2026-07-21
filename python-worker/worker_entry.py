@@ -42,6 +42,9 @@ def _cli_convert(argv: list) -> int:
         if ext == '.pdf' and dst.suffix.lower() == '.docx':
             from app.converters.pdf_word import convert_pdf_to_word
             convert_pdf_to_word(src, dst)
+        elif ext == '.pdf' and dst.suffix.lower() == '.xlsx':
+            from app.converters.pdf_excel import convert_pdf_to_excel
+            convert_pdf_to_excel(src, dst)
         elif ext in IMAGE_EXTS:
             convert_image(src, dst)
         elif ext in WORD_EXTS:

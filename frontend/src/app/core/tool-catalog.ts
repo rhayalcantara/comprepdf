@@ -96,6 +96,16 @@ export const TOOL_CATALOG: ToolDef[] = [
     cta: 'Convertir a Word',
   },
   {
+    id: 'pdf-to-excel',
+    route: '/tools/pdf-to-excel',
+    icon: 'table_view',
+    title: 'PDF a Excel',
+    description: 'Extrae las tablas de un PDF a un libro de Excel (.xlsx).',
+    hue: '#15803d',
+    hueSoft: '#e4f4ea',
+    cta: 'Extraer a Excel',
+  },
+  {
     id: 'organize',
     route: '/organizar',
     icon: 'dashboard_customize',

@@ -20,6 +20,7 @@ const OPERATION_LABELS: Record<string, string> = {
   organize: 'Ordenar páginas',
   convert: 'Convertir',
   pdf_to_word: 'PDF a Word',
+  pdf_to_excel: 'PDF a Excel',
 };
 
 const STATUS_LABELS: Record<string, string> = {

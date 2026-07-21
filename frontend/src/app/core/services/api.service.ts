@@ -33,7 +33,7 @@ export interface ApiResponse<T> {
 export type OperationType =
   | 'compress' | 'split' | 'merge' | 'sign'
   | 'extract' | 'rotate' | 'protect' | 'unlock' | 'certificate' | 'pdf_edit' | 'organize' | 'convert'
-  | 'pdf_to_word';
+  | 'pdf_to_word' | 'pdf_to_excel';
 
 /**
  * Una página del documento organizado, en el orden final de salida.
@@ -444,6 +444,18 @@ export class ApiService {
     formData.append('file', file);
     this.appendOutputName(formData, outputName);
     return this.http.post<ApiResponse<JobResponse>>(`${this.baseUrl}/pdf/to-word`, formData);
+  }
+
+  /**
+   * PDF → Excel (.xlsx): extrae las TABLAS del PDF, una hoja por tabla. El
+   * texto suelto no se exporta; sin tablas detectables el job falla con
+   * mensaje claro.
+   */
+  pdfToExcel(file: File, outputName?: string): Observable<ApiResponse<JobResponse>> {
+    const formData = new FormData();
+    formData.append('file', file);
+    this.appendOutputName(formData, outputName);
+    return this.http.post<ApiResponse<JobResponse>>(`${this.baseUrl}/pdf/to-excel`, formData);
   }
 
   /**

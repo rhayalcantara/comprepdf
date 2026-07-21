@@ -571,6 +571,21 @@
               </label>
             }
 
+            @case ('pdf-to-excel') {
+              <div class="field">
+                <span class="field-label">Qué esperar</span>
+                <p class="text-sm text-ink-soft m-0">
+                  Extrae las <strong>tablas</strong> del PDF a un libro de Excel:
+                  una hoja por tabla, con la página de origen en el nombre. El
+                  texto fuera de tablas no se exporta.
+                </p>
+                <p class="text-sm text-ink-soft mt-2 mb-0">
+                  Si el PDF no tiene tablas detectables (o es un escaneo), la
+                  operación lo indicará. Para el documento completo usa PDF a Word.
+                </p>
+              </div>
+            }
+
             @case ('pdf-to-word') {
               <div class="field">
                 <span class="field-label">Qué esperar</span>
