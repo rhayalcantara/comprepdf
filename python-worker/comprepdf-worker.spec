@@ -8,6 +8,10 @@ hiddenimports += collect_submodules('PIL')
 # (sin gen_py), así que basta con los módulos base de win32com.
 hiddenimports += ['pythoncom', 'win32com', 'win32com.client', 'win32com.client.dynamic',
                   'win32api', 'win32con', 'win32process']
+# pdf2docx (operación pdf_to_word): collect_all por sus plantillas/datos, y sus
+# dependencias pesadas (PyMuPDF/fitz, opencv, numpy) van por hooks de PyInstaller.
+_p2d_datas, _p2d_binaries, _p2d_hiddenimports = collect_all('pdf2docx')
+hiddenimports += _p2d_hiddenimports
 
 # Pillow trae extensiones nativas (_imaging, libjpeg, zlib, ...). El hook de
 # PyInstaller suele recogerlas, pero las incluimos explícitamente para no
@@ -23,6 +27,8 @@ _rl_datas, _rl_binaries, _rl_hiddenimports = collect_all('reportlab')
 datas += _rl_datas
 binaries += _rl_binaries
 hiddenimports += _rl_hiddenimports
+datas += _p2d_datas
+binaries += _p2d_binaries
 
 
 a = Analysis(
@@ -34,7 +40,10 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    # pandas/matplotlib: dependencias OPCIONALES que los hooks de fitz/opencv
+    # arrastran si están instaladas en dev; el worker no las usa y engordarían
+    # el bundle ~40MB. Si algún día una operación las necesita, quitarlas de aquí.
+    excludes=['pandas', 'matplotlib'],
     noarchive=False,
     optimize=0,
 )

@@ -19,6 +19,7 @@ const OPERATION_LABELS: Record<string, string> = {
   pdf_edit: 'Editar',
   organize: 'Ordenar páginas',
   convert: 'Convertir',
+  pdf_to_word: 'PDF a Word',
 };
 
 const STATUS_LABELS: Record<string, string> = {

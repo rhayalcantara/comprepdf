@@ -571,6 +571,22 @@
               </label>
             }
 
+            @case ('pdf-to-word') {
+              <div class="field">
+                <span class="field-label">Qué esperar</span>
+                <p class="text-sm text-ink-soft m-0">
+                  El resultado es un .docx editable con el texto, las tablas y las
+                  imágenes reconstruidos. Un PDF no guarda la estructura original,
+                  así que el formato puede requerir ajustes en Word.
+                </p>
+                <p class="text-sm text-ink-soft mt-2 mb-0">
+                  Los PDFs protegidos con contraseña o escaneados (sin texto) no
+                  se pueden convertir; desbloquéalos primero con la herramienta
+                  Desbloquear.
+                </p>
+              </div>
+            }
+
             @case ('convert') {
               <div class="field">
                 <span class="field-label">Formatos aceptados</span>

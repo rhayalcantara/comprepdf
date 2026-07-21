@@ -11,7 +11,7 @@ jest.mock('fs/promises', () => ({
 }));
 
 import fs from 'fs/promises';
-import { signPdf, editPdf, organizePdf, convertToPdf } from '../../src/controllers/pdf-operation.controller';
+import { signPdf, editPdf, organizePdf, convertToPdf, pdfToWord } from '../../src/controllers/pdf-operation.controller';
 import { AppDataSource } from '../../src/config/database';
 import { CompressionJob } from '../../src/models/job.model';
 import { ValidationError } from '../../src/utils/errors';
@@ -823,5 +823,50 @@ describe('convertToPdf controller', () => {
     await run();
     expectValidationError(message);
     expect(fs.unlink).toHaveBeenCalledWith((mockRequest.file as Express.Multer.File).path);
+  });
+});
+
+describe('pdfToWord controller', () => {
+  let mockRequest: Partial<Request>;
+  let mockResponse: Partial<Response>;
+  let mockNext: NextFunction;
+  let jobRepo: { create: jest.Mock; save: jest.Mock };
+  let fileRepo: { create: jest.Mock; save: jest.Mock };
+
+  beforeEach(() => {
+    mockResponse = { json: jest.fn(), status: jest.fn().mockReturnThis() };
+    mockNext = jest.fn();
+    jobRepo = { create: jest.fn((x) => x), save: jest.fn(async (x) => x) };
+    fileRepo = { create: jest.fn((x) => x), save: jest.fn(async (x) => x) };
+    (AppDataSource.getRepository as jest.Mock).mockImplementation((entity) =>
+      entity === CompressionJob ? jobRepo : fileRepo,
+    );
+  });
+
+  afterEach(() => jest.clearAllMocks());
+
+  async function run(): Promise<void> {
+    await pdfToWord(mockRequest as Request, mockResponse as Response, mockNext);
+  }
+
+  it('caso feliz: crea el job pdf_to_word con el outputName saneado', async () => {
+    mockRequest = {
+      file: mockFile('file', 'contrato.pdf', 'application/pdf'),
+      body: { outputName: 'contrato editable' },
+    } as Partial<Request>;
+    await run();
+
+    expect(mockNext).not.toHaveBeenCalled();
+    const job = jobRepo.save.mock.calls[0][0];
+    expect(job.operationType).toBe('pdf_to_word');
+    expect(job.operationParams.output_name).toBe('contrato editable');
+  });
+
+  it('sin archivo responde 400', async () => {
+    mockRequest = { file: undefined, body: {} } as Partial<Request>;
+    await run();
+    expect(mockNext).toHaveBeenCalledTimes(1);
+    expect((mockNext as jest.Mock).mock.calls[0][0]).toBeInstanceOf(ValidationError);
+    expect(jobRepo.save).not.toHaveBeenCalled();
   });
 });

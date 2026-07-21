@@ -25,6 +25,7 @@ from app.operations.certificate import handle_certificate
 from app.operations.form_generate import handle_form_generate
 from app.operations.pdf_edit import handle_pdf_edit
 from app.operations.convert import handle_convert
+from app.operations.pdf_to_word import handle_pdf_to_word
 
 HANDLERS = {
     'compress': handle_compress,
@@ -40,6 +41,7 @@ HANDLERS = {
     'pdf_edit': handle_pdf_edit,
     'organize': handle_organize,
     'convert': handle_convert,
+    'pdf_to_word': handle_pdf_to_word,
 }
 
 POLL_INTERVAL = 2  # segundos entre sondeos cuando no hay trabajo

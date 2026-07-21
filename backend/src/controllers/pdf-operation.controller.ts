@@ -91,6 +91,22 @@ async function assertIsSignatureImage(file: Express.Multer.File): Promise<void> 
   }
 }
 
+/**
+ * PDF → Word (.docx). La entrada es un PDF normal (upload + validatePdfFile ya
+ * validaron magic bytes), así que aquí solo se crea el job: la comprobación de
+ * cifrado/escaneado la hace el worker, que es quien puede abrir el PDF.
+ */
+export const pdfToWord = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    if (!req.file) throw new ValidationError('No file uploaded');
+    await createPdfJob(req, res, 'pdf_to_word', {
+      output_name: sanitizeOutputName(req.body.outputName),
+    }, [req.file]);
+  } catch (error) {
+    next(error);
+  }
+};
+
 // --- Conversión a PDF (convert) ---
 
 /**

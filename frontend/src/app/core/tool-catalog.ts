@@ -86,6 +86,16 @@ export const TOOL_CATALOG: ToolDef[] = [
     cta: 'Convertir a PDF',
   },
   {
+    id: 'pdf-to-word',
+    route: '/tools/pdf-to-word',
+    icon: 'article',
+    title: 'PDF a Word',
+    description: 'Convierte un PDF en un documento Word editable (.docx).',
+    hue: '#1d4ed8',
+    hueSoft: '#e7edfd',
+    cta: 'Convertir a Word',
+  },
+  {
     id: 'organize',
     route: '/organizar',
     icon: 'dashboard_customize',

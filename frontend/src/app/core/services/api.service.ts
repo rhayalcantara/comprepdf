@@ -32,7 +32,8 @@ export interface ApiResponse<T> {
 /** Operaciones conocidas (incluye `certificate`, emisión de admin). */
 export type OperationType =
   | 'compress' | 'split' | 'merge' | 'sign'
-  | 'extract' | 'rotate' | 'protect' | 'unlock' | 'certificate' | 'pdf_edit' | 'organize' | 'convert';
+  | 'extract' | 'rotate' | 'protect' | 'unlock' | 'certificate' | 'pdf_edit' | 'organize' | 'convert'
+  | 'pdf_to_word';
 
 /**
  * Una página del documento organizado, en el orden final de salida.
@@ -432,6 +433,17 @@ export class ApiService {
     formData.append('file', file);
     this.appendOutputName(formData, outputName);
     return this.http.post<ApiResponse<JobResponse>>(`${this.baseUrl}/pdf/convert`, formData);
+  }
+
+  /**
+   * PDF → Word (.docx) editable. Reconstrucción aproximada (un PDF no guarda
+   * estructura); los PDFs cifrados o escaneados fallan con mensaje claro.
+   */
+  pdfToWord(file: File, outputName?: string): Observable<ApiResponse<JobResponse>> {
+    const formData = new FormData();
+    formData.append('file', file);
+    this.appendOutputName(formData, outputName);
+    return this.http.post<ApiResponse<JobResponse>>(`${this.baseUrl}/pdf/to-word`, formData);
   }
 
   /**

@@ -6,7 +6,7 @@ import { login, register, me, changePassword } from '../controllers/auth.control
 import { requireAuth, requireRole } from '../middlewares/auth.middleware';
 import {
   splitPdf, mergePdfs, signPdf, extractPages,
-  rotatePages, protectPdf, unlockPdf, editPdf, organizePdf, convertToPdf,
+  rotatePages, protectPdf, unlockPdf, editPdf, organizePdf, convertToPdf, pdfToWord,
 } from '../controllers/pdf-operation.controller';
 import { getOverview, getDailyStats, getRecentJobs, getOperationStats, getCompressionLevelStats } from '../controllers/stats.controller';
 import { issueCertificate, listCertificates } from '../controllers/certificate.controller';
@@ -85,6 +85,8 @@ router.post('/pdf/organize', upload.single('file'), validatePdfFile, organizePdf
 // Conversión a PDF: la entrada NO es un PDF (Office/imagen), así que usa su
 // propio multer por extensión y valida magic bytes en el controlador.
 router.post('/pdf/convert', uploadConvert.single('file'), convertToPdf);
+// PDF -> Word: la entrada SÍ es un PDF, así que usa el pipeline PDF estándar.
+router.post('/pdf/to-word', upload.single('file'), validatePdfFile, pdfToWord);
 router.post('/pdf/protect', upload.single('file'), validatePdfFile, protectPdf);
 router.post('/pdf/unlock', unlockPdf);
 router.post(

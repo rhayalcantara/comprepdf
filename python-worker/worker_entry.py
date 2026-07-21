@@ -16,10 +16,11 @@ El resultado queda en dist/comprepdf-worker/ y se despliega tal cual a QA
 Config por variables de entorno (ver app/config.py); start.bat de QA define
 OUTPUT_DIR.
 
-Modo CLI (sin MySQL): `comprepdf-worker.exe --convert entrada salida.pdf`
-convierte UN archivo con el mismo motor de la operación `convert`. Sirve como
-smoke del exe congelado (¿funciona pywin32/COM dentro del bundle?) y es la
-semilla del futuro modo batch de carpeta vigilada.
+Modo CLI (sin MySQL): `comprepdf-worker.exe --convert entrada salida`
+convierte UN archivo con los mismos motores de las operaciones `convert` y
+`pdf_to_word` (si la entrada es .pdf y la salida .docx, va por pdf2docx).
+Sirve como smoke del exe congelado y es la semilla del futuro modo batch de
+carpeta vigilada.
 """
 import sys
 
@@ -38,7 +39,10 @@ def _cli_convert(argv: list) -> int:
     src, dst = Path(argv[0]), Path(argv[1])
     ext = src.suffix.lower()
     try:
-        if ext in IMAGE_EXTS:
+        if ext == '.pdf' and dst.suffix.lower() == '.docx':
+            from app.converters.pdf_word import convert_pdf_to_word
+            convert_pdf_to_word(src, dst)
+        elif ext in IMAGE_EXTS:
             convert_image(src, dst)
         elif ext in WORD_EXTS:
             convert_word(src, dst)

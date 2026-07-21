@@ -14,3 +14,5 @@ python-dotenv==1.0.0
 # COM de Office (operacion convert). Solo Windows: el contenedor Linux de
 # docker-compose instala el resto y office_com.py degrada con un error claro.
 pywin32==306; sys_platform == "win32"
+# PDF -> Word (operacion pdf_to_word). Trae PyMuPDF, python-docx y opencv-headless.
+pdf2docx==0.5.13

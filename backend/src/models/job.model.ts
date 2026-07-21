@@ -18,7 +18,8 @@ export type OperationType =
   | 'form_generate'
   | 'pdf_edit'
   | 'organize'
-  | 'convert';
+  | 'convert'
+  | 'pdf_to_word';
 
 @Entity('compression_jobs')
 export class CompressionJob {
@@ -39,7 +40,7 @@ export class CompressionJob {
   @Column({
     name: 'operation_type',
     type: 'enum',
-    enum: ['compress', 'split', 'merge', 'sign', 'extract', 'rotate', 'protect', 'unlock', 'certificate', 'form_generate', 'pdf_edit', 'organize', 'convert'],
+    enum: ['compress', 'split', 'merge', 'sign', 'extract', 'rotate', 'protect', 'unlock', 'certificate', 'form_generate', 'pdf_edit', 'organize', 'convert', 'pdf_to_word'],
     default: 'compress',
   })
   operationType!: OperationType;
