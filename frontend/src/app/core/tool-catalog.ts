@@ -76,6 +76,16 @@ export const TOOL_CATALOG: ToolDef[] = [
     cta: 'Rotar páginas',
   },
   {
+    id: 'convert',
+    route: '/tools/convert',
+    icon: 'description',
+    title: 'Convertir a PDF',
+    description: 'Word, Excel, PowerPoint, texto o imágenes convertidos a PDF.',
+    hue: '#0369a1',
+    hueSoft: '#e2f2fb',
+    cta: 'Convertir a PDF',
+  },
+  {
     id: 'organize',
     route: '/organizar',
     icon: 'dashboard_customize',

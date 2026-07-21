@@ -23,7 +23,15 @@ import {
 import { SignPlacementComponent, SignaturePlacement } from './sign-placement.component';
 import { MergeBuilderComponent, MergeEntry } from './merge-builder.component';
 
-type SingleFileField = 'splitFile' | 'extractFile' | 'rotateFile' | 'protectFile' | 'unlockFile' | 'signFile' | 'signCert';
+type SingleFileField = 'splitFile' | 'extractFile' | 'rotateFile' | 'protectFile' | 'unlockFile' | 'signFile' | 'signCert' | 'convertFile';
+
+/** Extensiones que acepta la conversión a PDF (espejo del backend, uploadConvert). */
+const CONVERT_EXTENSIONS = [
+  '.doc', '.docx', '.rtf', '.odt', '.txt',
+  '.xls', '.xlsx', '.ods',
+  '.ppt', '.pptx', '.odp',
+  '.jpg', '.jpeg', '.png',
+];
 
 /** Herramientas con previsualización de páginas (pdf.js). */
 const PREVIEW_TOOLS = ['split', 'extract', 'rotate', 'sign'];
@@ -187,6 +195,9 @@ export class ToolsComponent implements OnDestroy {
   unlockFile: File | null = null;
   unlockPassword = '';
 
+  // Convert
+  convertFile: File | null = null;
+
   // Sign
   signFile: File | null = null;
   signCert: File | null = null;
@@ -297,8 +308,23 @@ export class ToolsComponent implements OnDestroy {
       case 'protect': return this.protectFile;
       case 'unlock': return this.unlockFile;
       case 'sign': return this.signFile;
+      case 'convert': return this.convertFile;
       default: return null;
     }
+  }
+
+  /** Tipos aceptados por el input/drop principal (convert no recibe PDFs). */
+  mainAccept(): string {
+    return this.toolId() === 'convert' ? CONVERT_EXTENSIONS.join(',') : '.pdf';
+  }
+
+  /** ¿El archivo es válido para la herramienta actual? (drag & drop) */
+  private acceptsMainFile(file: File): boolean {
+    if (this.toolId() === 'convert') {
+      const name = file.name.toLowerCase();
+      return CONVERT_EXTENSIONS.some((ext) => name.endsWith(ext));
+    }
+    return file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
   }
 
   clearMainFile(): void {
@@ -313,6 +339,7 @@ export class ToolsComponent implements OnDestroy {
       case 'protect': this.protectFile = file; break;
       case 'unlock': this.unlockFile = file; break;
       case 'sign': this.signFile = file; break;
+      case 'convert': this.convertFile = file; break;
     }
     this.hasMainFile.set(!!file);
     if (PREVIEW_TOOLS.includes(this.toolId())) {
@@ -387,9 +414,11 @@ export class ToolsComponent implements OnDestroy {
     event.preventDefault();
     this.isDragging.set(false);
     const files = Array.from(event.dataTransfer?.files ?? [])
-      .filter((f) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+      .filter((f) => this.acceptsMainFile(f));
     if (!files.length) {
-      return this.warn('Solo se permiten archivos PDF');
+      return this.warn(this.toolId() === 'convert'
+        ? 'Formato no soportado (Word, Excel, PowerPoint, ODF, TXT, RTF, JPG o PNG)'
+        : 'Solo se permiten archivos PDF');
     }
     // Merge gestiona su propio drag & drop dentro de MergeBuilderComponent.
     this.setMainFile(files[0]);
@@ -630,6 +659,7 @@ export class ToolsComponent implements OnDestroy {
       case 'rotate': return this.runRotate();
       case 'protect': return this.runProtect();
       case 'unlock': return this.runUnlock();
+      case 'convert': return this.runConvert();
     }
   }
 
@@ -744,6 +774,11 @@ export class ToolsComponent implements OnDestroy {
       color: this.signStampColor(),
       border: this.signStampBorder(),
     };
+  }
+
+  private runConvert(): void {
+    if (!this.convertFile) return this.warn('Selecciona un documento');
+    this.run(this.api.convertToPdf(this.convertFile, this.outName()));
   }
 
   private runSign(): void {

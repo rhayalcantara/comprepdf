@@ -15,6 +15,10 @@ const OPERATION_LABELS: Record<string, string> = {
   protect: 'Proteger',
   unlock: 'Desbloquear',
   certificate: 'Certificado',
+  form_generate: 'Formulario',
+  pdf_edit: 'Editar',
+  organize: 'Ordenar páginas',
+  convert: 'Convertir',
 };
 
 const STATUS_LABELS: Record<string, string> = {

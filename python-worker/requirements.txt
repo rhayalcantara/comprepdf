@@ -11,3 +11,6 @@ python-magic-bin==0.4.14
 pydantic==2.5.2
 python-multipart==0.0.6
 python-dotenv==1.0.0
+# COM de Office (operacion convert). Solo Windows: el contenedor Linux de
+# docker-compose instala el resto y office_com.py degrada con un error claro.
+pywin32==306; sys_platform == "win32"

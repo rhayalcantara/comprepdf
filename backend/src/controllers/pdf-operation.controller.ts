@@ -91,6 +91,74 @@ async function assertIsSignatureImage(file: Express.Multer.File): Promise<void> 
   }
 }
 
+// --- Conversión a PDF (convert) ---
+
+/**
+ * Familias de la conversión y sus magic bytes. La EXTENSIÓN decide qué
+ * aplicación convertirá (el multer ya filtró la whitelist); los magic bytes
+ * confirman que el contenido pertenece a esa familia — un .docx renombrado
+ * a .xlsx pasa (misma familia ZIP), pero un .exe renombrado a .docx no.
+ */
+type ConvertFamily = 'zip' | 'ole' | 'rtf' | 'jpeg' | 'png' | 'text';
+
+const CONVERT_FAMILY_BY_EXT: Record<string, ConvertFamily> = {
+  '.docx': 'zip', '.xlsx': 'zip', '.pptx': 'zip',
+  '.odt': 'zip', '.ods': 'zip', '.odp': 'zip',
+  '.doc': 'ole', '.xls': 'ole', '.ppt': 'ole',
+  '.rtf': 'rtf',
+  '.jpg': 'jpeg', '.jpeg': 'jpeg',
+  '.png': 'png',
+  '.txt': 'text',
+};
+
+function matchesFamily(buffer: Buffer, family: ConvertFamily): boolean {
+  switch (family) {
+    case 'zip':  // OOXML y OpenDocument son contenedores ZIP
+      return buffer.length >= 4 &&
+        buffer[0] === 0x50 && buffer[1] === 0x4b && buffer[2] === 0x03 && buffer[3] === 0x04;
+    case 'ole':  // formato binario legado de Office (Compound File)
+      return buffer.length >= 4 &&
+        buffer[0] === 0xd0 && buffer[1] === 0xcf && buffer[2] === 0x11 && buffer[3] === 0xe0;
+    case 'rtf':
+      return buffer.toString('latin1', 0, 5).startsWith('{\\rtf');
+    case 'jpeg':
+      return buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xd8;
+    case 'png':
+      return buffer.length >= 4 &&
+        buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47;
+    case 'text':  // sin magic: rechazar binario (bytes NUL en el primer KB)
+      return !buffer.subarray(0, 1024).includes(0);
+  }
+}
+
+export const convertToPdf = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    if (!req.file) throw new ValidationError('No file uploaded');
+    const ext = path.extname(req.file.originalname).toLowerCase();
+    const family = CONVERT_FAMILY_BY_EXT[ext];
+    if (!family) {
+      // El multer ya filtra; esto cubre llamadas que lo esquiven.
+      throw new ValidationError(`Unsupported file type "${ext || '(none)'}" for conversion`);
+    }
+
+    const buffer = await fs.readFile(req.file.path);
+    if (buffer.length === 0) throw new ValidationError('The uploaded file is empty');
+    if (!matchesFamily(buffer, family)) {
+      throw new ValidationError(`File content does not match its "${ext}" extension`);
+    }
+
+    await createPdfJob(req, res, 'convert', {
+      source_ext: ext.slice(1),
+      output_name: sanitizeOutputName(req.body.outputName),
+    }, [req.file]);
+  } catch (error) {
+    if (error instanceof ValidationError) {
+      await cleanupUploads([req.file]);
+    }
+    next(error);
+  }
+};
+
 /** Borra del disco los archivos subidos (limpieza en caminos de error). */
 async function cleanupUploads(files: (Express.Multer.File | undefined)[]): Promise<void> {
   await Promise.all(

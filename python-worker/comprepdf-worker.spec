@@ -4,6 +4,10 @@ from PyInstaller.utils.hooks import collect_all, collect_dynamic_libs, collect_s
 hiddenimports = []
 hiddenimports += collect_submodules('mysql.connector')
 hiddenimports += collect_submodules('PIL')
+# pywin32 (COM de Office para la operación convert). El dispatch es dinámico
+# (sin gen_py), así que basta con los módulos base de win32com.
+hiddenimports += ['pythoncom', 'win32com', 'win32com.client', 'win32com.client.dynamic',
+                  'win32api', 'win32con', 'win32process']
 
 # Pillow trae extensiones nativas (_imaging, libjpeg, zlib, ...). El hook de
 # PyInstaller suele recogerlas, pero las incluimos explícitamente para no

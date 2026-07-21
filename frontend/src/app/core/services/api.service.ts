@@ -32,7 +32,7 @@ export interface ApiResponse<T> {
 /** Operaciones conocidas (incluye `certificate`, emisión de admin). */
 export type OperationType =
   | 'compress' | 'split' | 'merge' | 'sign'
-  | 'extract' | 'rotate' | 'protect' | 'unlock' | 'certificate' | 'pdf_edit' | 'organize';
+  | 'extract' | 'rotate' | 'protect' | 'unlock' | 'certificate' | 'pdf_edit' | 'organize' | 'convert';
 
 /**
  * Una página del documento organizado, en el orden final de salida.
@@ -421,6 +421,17 @@ export class ApiService {
     formData.append('pages', pages);
     this.appendOutputName(formData, outputName);
     return this.http.post<ApiResponse<JobResponse>>(`${this.baseUrl}/pdf/rotate`, formData);
+  }
+
+  /**
+   * Convierte un documento Office (Word/Excel/PowerPoint, formatos modernos,
+   * legados y OpenDocument), un .txt/.rtf o una imagen JPG/PNG a PDF.
+   */
+  convertToPdf(file: File, outputName?: string): Observable<ApiResponse<JobResponse>> {
+    const formData = new FormData();
+    formData.append('file', file);
+    this.appendOutputName(formData, outputName);
+    return this.http.post<ApiResponse<JobResponse>>(`${this.baseUrl}/pdf/convert`, formData);
   }
 
   /**

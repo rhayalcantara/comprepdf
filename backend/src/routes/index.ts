@@ -6,7 +6,7 @@ import { login, register, me, changePassword } from '../controllers/auth.control
 import { requireAuth, requireRole } from '../middlewares/auth.middleware';
 import {
   splitPdf, mergePdfs, signPdf, extractPages,
-  rotatePages, protectPdf, unlockPdf, editPdf, organizePdf,
+  rotatePages, protectPdf, unlockPdf, editPdf, organizePdf, convertToPdf,
 } from '../controllers/pdf-operation.controller';
 import { getOverview, getDailyStats, getRecentJobs, getOperationStats, getCompressionLevelStats } from '../controllers/stats.controller';
 import { issueCertificate, listCertificates } from '../controllers/certificate.controller';
@@ -14,7 +14,7 @@ import { listUsers, createUser, updateUser } from '../controllers/user.controlle
 import {
   listForms, getForm, createForm, updateForm, deleteForm, generateForm, previewForm,
 } from '../controllers/form.controller';
-import { upload, uploadMultiple, uploadSign, uploadEdit, enforceSignatureSizeLimit } from '../middlewares/upload.middleware';
+import { upload, uploadMultiple, uploadSign, uploadEdit, uploadConvert, enforceSignatureSizeLimit } from '../middlewares/upload.middleware';
 import { validatePdfFile, validatePdfFiles, validateCompressionOptions, validateCertificateRequest } from '../middlewares/validation.middleware';
 
 const router = Router();
@@ -82,6 +82,9 @@ router.post('/pdf/merge', uploadMultiple.array('files', 50), validatePdfFiles, m
 router.post('/pdf/extract', upload.single('file'), validatePdfFile, extractPages);
 router.post('/pdf/rotate', upload.single('file'), validatePdfFile, rotatePages);
 router.post('/pdf/organize', upload.single('file'), validatePdfFile, organizePdf);
+// Conversión a PDF: la entrada NO es un PDF (Office/imagen), así que usa su
+// propio multer por extensión y valida magic bytes en el controlador.
+router.post('/pdf/convert', uploadConvert.single('file'), convertToPdf);
 router.post('/pdf/protect', upload.single('file'), validatePdfFile, protectPdf);
 router.post('/pdf/unlock', unlockPdf);
 router.post(

@@ -11,7 +11,7 @@ jest.mock('fs/promises', () => ({
 }));
 
 import fs from 'fs/promises';
-import { signPdf, editPdf, organizePdf } from '../../src/controllers/pdf-operation.controller';
+import { signPdf, editPdf, organizePdf, convertToPdf } from '../../src/controllers/pdf-operation.controller';
 import { AppDataSource } from '../../src/config/database';
 import { CompressionJob } from '../../src/models/job.model';
 import { ValidationError } from '../../src/utils/errors';
@@ -720,5 +720,108 @@ describe('organizePdf controller', () => {
     buildRequest({ pages: Array.from({ length: 5001 }, () => ({ source: 1 })) });
     await run();
     expectValidationError('Too many pages');
+  });
+});
+
+describe('convertToPdf controller', () => {
+  let mockRequest: Partial<Request>;
+  let mockResponse: Partial<Response>;
+  let mockNext: NextFunction;
+  let jobRepo: { create: jest.Mock; save: jest.Mock };
+  let fileRepo: { create: jest.Mock; save: jest.Mock };
+  let diskContents: Record<string, Buffer>;
+
+  // Magic bytes por familia
+  const ZIP = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00]);
+  const OLE = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1]);
+  const RTF = Buffer.from('{\\rtf1\\ansi hola}');
+  const TXT = Buffer.from('texto plano normal\ncon dos líneas');
+  const BIN = Buffer.from([0x74, 0x00, 0x78, 0x00, 0x74, 0x00]); // NUL en el primer KB
+
+  const savedJob = () => jobRepo.save.mock.calls[0][0];
+
+  beforeEach(() => {
+    mockResponse = { json: jest.fn(), status: jest.fn().mockReturnThis() };
+    mockNext = jest.fn();
+    jobRepo = { create: jest.fn((x) => x), save: jest.fn(async (x) => x) };
+    fileRepo = { create: jest.fn((x) => x), save: jest.fn(async (x) => x) };
+    (AppDataSource.getRepository as jest.Mock).mockImplementation((entity) =>
+      entity === CompressionJob ? jobRepo : fileRepo,
+    );
+    diskContents = {};
+    (fs.readFile as jest.Mock).mockImplementation(async (p: string) => {
+      const c = diskContents[p];
+      if (!c) throw new Error(`ENOENT: ${p}`);
+      return c;
+    });
+    (fs.unlink as jest.Mock).mockResolvedValue(undefined);
+  });
+
+  afterEach(() => jest.clearAllMocks());
+
+  function buildRequest(originalname: string, content: Buffer | null, body: Record<string, unknown> = {}): void {
+    if (content === null) {
+      mockRequest = { file: undefined, body } as Partial<Request>;
+      return;
+    }
+    const file = mockFile('file', originalname, 'application/octet-stream');
+    diskContents[file.path] = content;
+    mockRequest = { file, body } as Partial<Request>;
+  }
+  async function run(): Promise<void> {
+    await convertToPdf(mockRequest as Request, mockResponse as Response, mockNext);
+  }
+  function expectValidationError(part: string): void {
+    expect(mockNext).toHaveBeenCalledTimes(1);
+    const error = (mockNext as jest.Mock).mock.calls[0][0];
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(error.message).toContain(part);
+    expect(jobRepo.save).not.toHaveBeenCalled();
+  }
+
+  it.each([
+    ['informe.docx', ZIP, 'docx'],
+    ['viejo.doc', OLE, 'doc'],
+    ['carta.rtf', RTF, 'rtf'],
+    ['libro.xlsx', ZIP, 'xlsx'],
+    ['charla.pptx', ZIP, 'pptx'],
+    ['notas.TXT', TXT, 'txt'],
+    ['foto.jpg', JPEG_BUFFER, 'jpg'],
+    ['logo.png', PNG_BUFFER, 'png'],
+  ])('caso feliz: %s crea el job convert', async (name, content, sourceExt) => {
+    buildRequest(name, content);
+    await run();
+
+    expect(mockNext).not.toHaveBeenCalled();
+    const job = savedJob();
+    expect(job.operationType).toBe('convert');
+    expect(job.operationParams.source_ext).toBe(sourceExt);
+    expect(fs.unlink).not.toHaveBeenCalled();
+  });
+
+  it('guarda el outputName saneado', async () => {
+    buildRequest('doc.docx', ZIP, { outputName: 'mi informe' });
+    await run();
+    expect(savedJob().operationParams.output_name).toBe('mi informe');
+  });
+
+  it('sin archivo responde 400', async () => {
+    buildRequest('x', null);
+    await run();
+    expectValidationError('No file uploaded');
+  });
+
+  it.each([
+    ['un .exe renombrado a .docx', 'troyano.docx', Buffer.from('MZ\x90\x00'), 'does not match'],
+    ['un .txt renombrado a .doc', 'nota.doc', TXT, 'does not match'],
+    ['un .txt con bytes binarios', 'raro.txt', BIN, 'does not match'],
+    ['una imagen que no es png', 'foto.png', TXT, 'does not match'],
+    ['un archivo vacío', 'vacio.docx', Buffer.alloc(0), 'empty'],
+    ['una extensión no soportada', 'programa.exe', ZIP, 'Unsupported file type'],
+  ])('rechaza %s con 400 y borra el archivo', async (_n, name, content, message) => {
+    buildRequest(name, content);
+    await run();
+    expectValidationError(message);
+    expect(fs.unlink).toHaveBeenCalledWith((mockRequest.file as Express.Multer.File).path);
   });
 });

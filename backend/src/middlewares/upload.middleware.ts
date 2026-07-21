@@ -67,6 +67,27 @@ const editFileFilter = (_req: Request, file: Express.Multer.File, cb: multer.Fil
 
 export const uploadEdit = multer({ storage, fileFilter: editFileFilter, limits });
 
+// Conversión a PDF: se filtra por EXTENSIÓN (los mimetypes que mandan los
+// navegadores para archivos de Office varían demasiado para ser fiables).
+// El controlador valida después los magic bytes de la familia.
+export const CONVERT_EXTENSIONS = [
+  '.doc', '.docx', '.rtf', '.odt', '.txt',
+  '.xls', '.xlsx', '.ods',
+  '.ppt', '.pptx', '.odp',
+  '.jpg', '.jpeg', '.png',
+] as const;
+
+const convertFileFilter = (_req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (!(CONVERT_EXTENSIONS as readonly string[]).includes(ext)) {
+    cb(new ValidationError(`Unsupported file type "${ext || '(none)'}" for conversion`));
+    return;
+  }
+  cb(null, true);
+};
+
+export const uploadConvert = multer({ storage, fileFilter: convertFileFilter, limits });
+
 /**
  * multer solo soporta `limits.fileSize` por instancia (aquí el máximo global
  * de config.upload.maxFileSizeMB, que sigue aplicando a 'file' y 'cert'), así
