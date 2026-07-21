@@ -169,8 +169,10 @@ def convert_word(input_path: Path, output_path: Path) -> None:
         try:
             doc.SaveAs2(str(output_path), WD_FORMAT_PDF)
         finally:
-            doc.Close(False)
-    except pythoncom.com_error as exc:
+            _close_quietly(doc)
+    except (pythoncom.com_error, AttributeError) as exc:
+        # AttributeError: el dispatch dinámico no resolvió un miembro (p. ej.
+        # Open devolvió un objeto a medias, o el watchdog mató el proceso).
         raise ValueError(_com_error_message('Word', exc, watchdog))
     finally:
         if own_instance:
@@ -200,8 +202,8 @@ def convert_excel(input_path: Path, output_path: Path) -> None:
             # las hojas con su configuración de impresión.
             wb.ExportAsFixedFormat(XL_TYPE_PDF, str(output_path))
         finally:
-            wb.Close(False)
-    except pythoncom.com_error as exc:
+            _close_quietly(wb)
+    except (pythoncom.com_error, AttributeError) as exc:
         raise ValueError(_com_error_message('Excel', exc, watchdog))
     finally:
         if own_instance:
@@ -233,14 +235,33 @@ def convert_powerpoint(input_path: Path, output_path: Path) -> None:
         try:
             pres.SaveAs(str(output_path), PP_SAVEAS_PDF)
         finally:
-            pres.Close()
-    except pythoncom.com_error as exc:
+            _close_quietly(pres)
+    except (pythoncom.com_error, AttributeError) as exc:
         raise ValueError(_com_error_message('PowerPoint', exc, watchdog))
     finally:
         if own_instance:
             _quit(app)
         watchdog.cleanup()
         pythoncom.CoUninitialize()
+
+
+def _close_quietly(doc) -> None:
+    """Cierra un documento/libro/presentación sin dejar que el cierre TAPE el
+    error real.
+
+    Está en un `finally`: si la conversión falló y este Close falla también
+    (p. ej. el CDispatch dinámico no resuelve Close en el objeto a medias que
+    devolvió Open), la excepción del finally REEMPLAZARÍA a la original y el
+    job quedaría con un mensaje inútil tipo "Open.Close" — pasó en QA con un
+    xlsx real. El Quit()/watchdog de después limpian igual.
+    """
+    try:
+        doc.Close(False)
+    except Exception:
+        try:
+            doc.Close()
+        except Exception:
+            pass
 
 
 def _quit(app) -> None:
