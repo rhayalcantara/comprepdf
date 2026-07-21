@@ -51,7 +51,10 @@ PPT_EXE = 'POWERPNT.EXE'
 
 # Contraseña falsa: un documento protegido falla al abrir (5408/"password
 # incorrecta") en vez de mostrar un diálogo que nadie puede cerrar.
-_FAKE_PASSWORD = '#!invalid-password!#'
+# MÁXIMO 15 caracteres: es el límite de contraseña de Word/Excel, y Word 2010
+# VALIDA la longitud aunque el documento no esté protegido — con una más larga
+# todo Open falla con "Command failed" (Word 2016 la tolera; cazado en QA).
+_FAKE_PASSWORD = '#!invalid!#'
 
 
 def _require_com() -> None:
@@ -127,10 +130,20 @@ class _Watchdog:
 def _com_error_message(app_name: str, exc: Exception, watchdog: '_Watchdog') -> str:
     if watchdog.timed_out.is_set():
         return f'{app_name} conversion timed out after {CONVERT_TIMEOUT_S}s'
-    detail = str(getattr(exc, 'excepinfo', None) or exc)
+    detail = _com_error_detail(exc)
     if 'password' in detail.lower() or 'contraseña' in detail.lower():
         return 'The document is password-protected'
-    return f'{app_name} could not convert the document'
+    # Incluir el detalle: el mensaje llega a error_message del job y sin él es
+    # imposible diagnosticar (versiones de Office distintas fallan distinto).
+    return f'{app_name} could not convert the document: {detail[:300]}'
+
+
+def _com_error_detail(exc: Exception) -> str:
+    """Texto humano del com_error: la descripción de excepinfo si existe."""
+    excepinfo = getattr(exc, 'excepinfo', None)
+    if excepinfo and len(excepinfo) > 2 and excepinfo[2]:
+        return str(excepinfo[2]).strip()
+    return str(exc)
 
 
 def convert_word(input_path: Path, output_path: Path) -> None:
