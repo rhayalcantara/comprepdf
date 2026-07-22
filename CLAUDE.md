@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ComprePDF is a PDF service (compression + operations) with a microservices architecture:
 - **Frontend**: Angular 17+ with Angular Material and TailwindCSS
 - **Backend API**: Node.js + Express + TypeScript
-- **PDF Worker**: Python + Ghostscript (compress) + pikepdf (split/merge/extract/rotate/organize/protect/unlock) + pyHanko (digital signature) + Office COM vía pywin32 (convert; requiere Microsoft Office en el host del worker — QA tiene Office 2010) + pdf2docx (pdf_to_word) + PyMuPDF find_tables + openpyxl (pdf_to_excel)
+- **PDF Worker**: Python + Ghostscript (compress) + pikepdf (split/merge/extract/rotate/organize/protect/unlock) + pyHanko (digital signature) + Office COM vía pywin32 (convert; requiere Microsoft Office en el host del worker — QA tiene Office 2010) + pdf2docx (pdf_to_word) + PyMuPDF find_tables + openpyxl (pdf_to_excel) + PyMuPDF/Ollama (translate; LLM local en 192.168.2.165:11434)
 - **Database**: MySQL 8.0
 - **Cache**: Redis
 
@@ -127,6 +127,7 @@ POST   /api/v1/pdf/organize          # Reorder/delete/rotate pages (body: pages 
 POST   /api/v1/pdf/convert           # Office/txt/rtf/image -> PDF (file field; Office via COM on worker host)
 POST   /api/v1/pdf/to-word           # PDF -> Word .docx editable (pdf2docx; rechaza cifrados/escaneados)
 POST   /api/v1/pdf/to-excel          # PDF -> Excel .xlsx: extrae TABLAS (una hoja por tabla; sin tablas -> error)
+POST   /api/v1/pdf/translate         # Traducir PDF (body: targetLang es|en|fr|pt|it|de) via LLM local (Ollama, OLLAMA_URL/OLLAMA_MODEL en el worker); mantiene el diseño
 POST   /api/v1/pdf/protect           # Add password (body: password)
 POST   /api/v1/pdf/unlock            # Remove password (body: password)
 POST   /api/v1/certificates          # (admin) Issue internal .pfx certificate

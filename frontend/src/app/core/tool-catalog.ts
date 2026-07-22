@@ -106,6 +106,16 @@ export const TOOL_CATALOG: ToolDef[] = [
     cta: 'Extraer a Excel',
   },
   {
+    id: 'pdf-translate',
+    route: '/tools/pdf-translate',
+    icon: 'translate',
+    title: 'Traducir PDF',
+    description: 'Traduce un PDF a otro idioma manteniendo el diseño.',
+    hue: '#9333ea',
+    hueSoft: '#f4ebfc',
+    cta: 'Traducir PDF',
+  },
+  {
     id: 'organize',
     route: '/organizar',
     icon: 'dashboard_customize',

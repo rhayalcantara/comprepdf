@@ -602,6 +602,31 @@
               </div>
             }
 
+            @case ('pdf-translate') {
+              <label class="field">
+                <span class="field-label">Idioma destino</span>
+                <select class="select" [(ngModel)]="translateLang">
+                  @for (lang of translateLangs; track lang.code) {
+                    <option [ngValue]="lang.code">{{ lang.label }}</option>
+                  }
+                </select>
+              </label>
+              <div class="field">
+                <span class="field-label">Qué esperar</span>
+                <p class="text-sm text-ink-soft m-0">
+                  El texto se traduce con un modelo de lenguaje local y se
+                  reescribe en su misma posición, conservando imágenes y tablas.
+                  Si la traducción es más larga que el original, la letra se
+                  reduce para que quepa.
+                </p>
+                <p class="text-sm text-ink-soft mt-2 mb-0">
+                  Los PDFs protegidos con contraseña o escaneados (sin texto) no
+                  se pueden traducir. La traducción puede tardar varios minutos
+                  según el número de páginas.
+                </p>
+              </div>
+            }
+
             @case ('convert') {
               <div class="field">
                 <span class="field-label">Formatos aceptados</span>

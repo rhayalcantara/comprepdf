@@ -21,6 +21,7 @@ const OPERATION_LABELS: Record<string, string> = {
   convert: 'Convertir',
   pdf_to_word: 'PDF a Word',
   pdf_to_excel: 'PDF a Excel',
+  translate: 'Traducir',
 };
 
 const STATUS_LABELS: Record<string, string> = {

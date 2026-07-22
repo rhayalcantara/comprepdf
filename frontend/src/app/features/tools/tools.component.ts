@@ -23,7 +23,17 @@ import {
 import { SignPlacementComponent, SignaturePlacement } from './sign-placement.component';
 import { MergeBuilderComponent, MergeEntry } from './merge-builder.component';
 
-type SingleFileField = 'splitFile' | 'extractFile' | 'rotateFile' | 'protectFile' | 'unlockFile' | 'signFile' | 'signCert' | 'convertFile' | 'pdfToWordFile' | 'pdfToExcelFile';
+type SingleFileField = 'splitFile' | 'extractFile' | 'rotateFile' | 'protectFile' | 'unlockFile' | 'signFile' | 'signCert' | 'convertFile' | 'pdfToWordFile' | 'pdfToExcelFile' | 'translateFile';
+
+/** Idiomas destino de la traducción (espejo del backend, TRANSLATE_LANGS). */
+const TRANSLATE_LANGS = [
+  { code: 'es', label: 'Español' },
+  { code: 'en', label: 'Inglés' },
+  { code: 'fr', label: 'Francés' },
+  { code: 'pt', label: 'Portugués' },
+  { code: 'it', label: 'Italiano' },
+  { code: 'de', label: 'Alemán' },
+] as const;
 
 /** Extensiones que acepta la conversión a PDF (espejo del backend, uploadConvert). */
 const CONVERT_EXTENSIONS = [
@@ -204,6 +214,11 @@ export class ToolsComponent implements OnDestroy {
   // PDF a Excel
   pdfToExcelFile: File | null = null;
 
+  // Traducir PDF
+  translateFile: File | null = null;
+  translateLang = 'es';
+  readonly translateLangs = TRANSLATE_LANGS;
+
   // Sign
   signFile: File | null = null;
   signCert: File | null = null;
@@ -317,6 +332,7 @@ export class ToolsComponent implements OnDestroy {
       case 'convert': return this.convertFile;
       case 'pdf-to-word': return this.pdfToWordFile;
       case 'pdf-to-excel': return this.pdfToExcelFile;
+      case 'pdf-translate': return this.translateFile;
       default: return null;
     }
   }
@@ -350,6 +366,7 @@ export class ToolsComponent implements OnDestroy {
       case 'convert': this.convertFile = file; break;
       case 'pdf-to-word': this.pdfToWordFile = file; break;
       case 'pdf-to-excel': this.pdfToExcelFile = file; break;
+      case 'pdf-translate': this.translateFile = file; break;
     }
     this.hasMainFile.set(!!file);
     if (PREVIEW_TOOLS.includes(this.toolId())) {
@@ -672,6 +689,7 @@ export class ToolsComponent implements OnDestroy {
       case 'convert': return this.runConvert();
       case 'pdf-to-word': return this.runPdfToWord();
       case 'pdf-to-excel': return this.runPdfToExcel();
+      case 'pdf-translate': return this.runTranslate();
     }
   }
 
@@ -801,6 +819,14 @@ export class ToolsComponent implements OnDestroy {
   private runPdfToExcel(): void {
     if (!this.pdfToExcelFile) return this.warn('Selecciona un PDF');
     this.run(this.api.pdfToExcel(this.pdfToExcelFile, this.outName()));
+  }
+
+  private runTranslate(): void {
+    if (!this.translateFile) return this.warn('Selecciona un PDF');
+    if (!this.translateLangs.some((l) => l.code === this.translateLang)) {
+      return this.warn('Selecciona el idioma destino');
+    }
+    this.run(this.api.translatePdf(this.translateFile, this.translateLang, this.outName()));
   }
 
   private runSign(): void {

@@ -29,6 +29,13 @@ class Settings:
     CA_COUNTRY = os.getenv('CA_COUNTRY', 'DO')
     CA_VALIDITY_YEARS = int(os.getenv('CA_VALIDITY_YEARS', '15'))
 
+    # --- Traducción de PDF (operación translate) ---
+    # Servidor Ollama con el LLM que traduce; el modelo debe existir allí
+    # (`ollama list`). El timeout es POR PETICIÓN (una petición por página).
+    OLLAMA_URL = os.getenv('OLLAMA_URL', 'http://192.168.2.165:11434')
+    OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'qwen3.6:35b')
+    OLLAMA_TIMEOUT = int(os.getenv('OLLAMA_TIMEOUT', '300'))
+
     @property
     def MYSQL_CONFIG(self):
         return {

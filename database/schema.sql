@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS compression_jobs (
     id VARCHAR(36) PRIMARY KEY,
     user_id VARCHAR(36) NULL,
     status ENUM('pending', 'processing', 'completed', 'failed') DEFAULT 'pending',
-    operation_type ENUM('compress', 'split', 'merge', 'sign', 'extract', 'rotate', 'protect', 'unlock', 'certificate', 'form_generate', 'pdf_edit', 'organize', 'convert', 'pdf_to_word', 'pdf_to_excel') NOT NULL DEFAULT 'compress',
+    operation_type ENUM('compress', 'split', 'merge', 'sign', 'extract', 'rotate', 'protect', 'unlock', 'certificate', 'form_generate', 'pdf_edit', 'organize', 'convert', 'pdf_to_word', 'pdf_to_excel', 'translate') NOT NULL DEFAULT 'compress',
     operation_params JSON NULL,
     compression_level ENUM('low', 'medium', 'high', 'custom') NULL,
     custom_dpi INT NULL,

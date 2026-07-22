@@ -19,3 +19,5 @@ pdf2docx==0.5.13
 # PDF -> Excel (operacion pdf_to_excel): escribe el .xlsx; las tablas las
 # detecta el PyMuPDF que ya trae pdf2docx.
 openpyxl==3.1.5
+# Traducir PDF (operacion translate): cliente HTTP hacia el Ollama local.
+requests==2.34.2

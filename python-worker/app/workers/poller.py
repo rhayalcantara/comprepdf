@@ -27,6 +27,7 @@ from app.operations.pdf_edit import handle_pdf_edit
 from app.operations.convert import handle_convert
 from app.operations.pdf_to_word import handle_pdf_to_word
 from app.operations.pdf_to_excel import handle_pdf_to_excel
+from app.operations.pdf_translate import handle_translate
 
 HANDLERS = {
     'compress': handle_compress,
@@ -44,6 +45,7 @@ HANDLERS = {
     'convert': handle_convert,
     'pdf_to_word': handle_pdf_to_word,
     'pdf_to_excel': handle_pdf_to_excel,
+    'translate': handle_translate,
 }
 
 POLL_INTERVAL = 2  # segundos entre sondeos cuando no hay trabajo

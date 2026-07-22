@@ -122,6 +122,35 @@ export const pdfToExcel = async (req: Request, res: Response, next: NextFunction
   }
 };
 
+// --- Traducción de PDF (translate) ---
+
+/**
+ * Idiomas destino soportados. Solo alfabeto latino: el worker escribe la
+ * traducción con la fuente base de PyMuPDF (helv), que no cubre CJK/árabe.
+ */
+const TRANSLATE_LANGS = ['es', 'en', 'fr', 'pt', 'it', 'de'] as const;
+
+/**
+ * Traducir PDF: el worker extrae los bloques de texto, los traduce con el LLM
+ * local (Ollama) y los reescribe en su misma posición. La comprobación de
+ * cifrado/escaneado la hace el worker, igual que en pdfToWord.
+ */
+export const translatePdf = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    if (!req.file) throw new ValidationError('No file uploaded');
+    const targetLang = String(req.body.targetLang ?? '');
+    if (!(TRANSLATE_LANGS as readonly string[]).includes(targetLang)) {
+      throw new ValidationError(`targetLang must be one of: ${TRANSLATE_LANGS.join(', ')}`);
+    }
+    await createPdfJob(req, res, 'translate', {
+      target_lang: targetLang,
+      output_name: sanitizeOutputName(req.body.outputName),
+    }, [req.file]);
+  } catch (error) {
+    next(error);
+  }
+};
+
 // --- Conversión a PDF (convert) ---
 
 /**

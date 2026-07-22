@@ -33,7 +33,7 @@ export interface ApiResponse<T> {
 export type OperationType =
   | 'compress' | 'split' | 'merge' | 'sign'
   | 'extract' | 'rotate' | 'protect' | 'unlock' | 'certificate' | 'pdf_edit' | 'organize' | 'convert'
-  | 'pdf_to_word' | 'pdf_to_excel';
+  | 'pdf_to_word' | 'pdf_to_excel' | 'translate';
 
 /**
  * Una página del documento organizado, en el orden final de salida.
@@ -456,6 +456,18 @@ export class ApiService {
     formData.append('file', file);
     this.appendOutputName(formData, outputName);
     return this.http.post<ApiResponse<JobResponse>>(`${this.baseUrl}/pdf/to-excel`, formData);
+  }
+
+  /**
+   * Traduce el PDF al idioma indicado manteniendo el diseño (LLM local en el
+   * worker). Los PDFs cifrados o escaneados fallan con mensaje claro.
+   */
+  translatePdf(file: File, targetLang: string, outputName?: string): Observable<ApiResponse<JobResponse>> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('targetLang', targetLang);
+    this.appendOutputName(formData, outputName);
+    return this.http.post<ApiResponse<JobResponse>>(`${this.baseUrl}/pdf/translate`, formData);
   }
 
   /**
