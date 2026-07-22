@@ -257,6 +257,21 @@ export interface JobsPage {
 
 // --- Gestión de usuarios (solo admin) ---
 
+/** Filtros del listado de usuarios (todos opcionales; vacío = sin filtro). */
+export interface UserFilters {
+  rol?: string;
+  estado?: string;
+  /** Texto a buscar en usuario, nombre o correo. */
+  q?: string;
+}
+
+export interface UsersPage {
+  users: SafeUser[];
+  pagination: Pagination;
+  /** Total GLOBAL de cuentas pendientes (ignora página y filtros). */
+  pendingTotal: number;
+}
+
 export interface CreateUserPayload {
   username: string;
   nombre: string;
@@ -604,8 +619,12 @@ export class ApiService {
 
   // --- Gestión de usuarios (solo admin) ---
 
-  getUsers(): Observable<ApiResponse<{ users: SafeUser[] }>> {
-    return this.http.get<ApiResponse<{ users: SafeUser[] }>>(`${this.baseUrl}/users`);
+  getUsers(page = 1, limit = 10, filters: UserFilters = {}): Observable<ApiResponse<UsersPage>> {
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (filters.rol) params.set('rol', filters.rol);
+    if (filters.estado) params.set('estado', filters.estado);
+    if (filters.q?.trim()) params.set('q', filters.q.trim());
+    return this.http.get<ApiResponse<UsersPage>>(`${this.baseUrl}/users?${params.toString()}`);
   }
 
   createUser(payload: CreateUserPayload): Observable<ApiResponse<CreateUserResult>> {

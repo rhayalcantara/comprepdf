@@ -56,18 +56,54 @@ describe('user.controller', () => {
   });
 
   describe('listUsers', () => {
-    it('devuelve SafeUser[] sin passwordHash', async () => {
-      jest
-        .spyOn(UserModel, 'list')
-        .mockResolvedValue([fakeUser(), fakeUser({ id: 'user-2', username: 'aroe' })]);
+    it('devuelve SafeUser[] sin passwordHash, con paginación y pendingTotal', async () => {
+      const listPage = jest.spyOn(UserModel, 'listPage').mockResolvedValue({
+        users: [fakeUser(), fakeUser({ id: 'user-2', username: 'aroe' })],
+        total: 2,
+        pendingTotal: 1,
+      });
 
-      await listUsers({} as Request, mockResponse as Response, mockNext);
+      await listUsers({ query: {} } as unknown as Request, mockResponse as Response, mockNext);
 
       expect(mockNext).not.toHaveBeenCalled();
-      const users = payload().data.users;
-      expect(users).toHaveLength(2);
-      expect(users[0].passwordHash).toBeUndefined();
-      expect(users[0].username).toBe('jdoe');
+      expect(listPage).toHaveBeenCalledWith({
+        page: 1, limit: 10, rol: undefined, estado: undefined, q: undefined,
+      });
+      const data = payload().data;
+      expect(data.users).toHaveLength(2);
+      expect(data.users[0].passwordHash).toBeUndefined();
+      expect(data.users[0].username).toBe('jdoe');
+      expect(data.pagination).toEqual({ page: 1, limit: 10, total: 2, totalPages: 1 });
+      expect(data.pendingTotal).toBe(1);
+    });
+
+    it('pasa página, límite y filtros válidos al modelo', async () => {
+      const listPage = jest.spyOn(UserModel, 'listPage').mockResolvedValue({
+        users: [], total: 0, pendingTotal: 0,
+      });
+
+      await listUsers(
+        { query: { page: '3', limit: '25', rol: 'admin', estado: 'pendiente', q: '  pérez  ' } } as unknown as Request,
+        mockResponse as Response,
+        mockNext,
+      );
+
+      expect(listPage).toHaveBeenCalledWith({
+        page: 3, limit: 25, rol: 'admin', estado: 'pendiente', q: 'pérez',
+      });
+    });
+
+    it('rechaza un filtro fuera de la whitelist con 400', async () => {
+      const listPage = jest.spyOn(UserModel, 'listPage');
+
+      await listUsers(
+        { query: { rol: 'superadmin' } } as unknown as Request,
+        mockResponse as Response,
+        mockNext,
+      );
+
+      expect(listPage).not.toHaveBeenCalled();
+      expect(nextError()).toBeInstanceOf(ValidationError);
     });
   });
 

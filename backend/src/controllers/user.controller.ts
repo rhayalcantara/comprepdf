@@ -18,6 +18,35 @@ const VALID_ROLES: UserRole[] = ['admin', 'user'];
 const VALID_STATUSES: UserStatus[] = ['activo', 'inactivo', 'pendiente'];
 const MIN_PASSWORD_LENGTH = 8;
 
+const DEFAULT_PAGE = 1;
+const DEFAULT_LIMIT = 10;
+const MAX_LIMIT = 100;
+const MAX_SEARCH_LENGTH = 100;
+
+/** Parsea `page` (>=1, por defecto 1). Mismo criterio que jobs.controller. */
+function parsePage(raw: unknown): number {
+  const n = parseInt(String(raw ?? ''), 10);
+  return Number.isFinite(n) && n >= 1 ? n : DEFAULT_PAGE;
+}
+
+/** Parsea `limit` (1..MAX_LIMIT, por defecto 10). */
+function parseLimit(raw: unknown): number {
+  const n = parseInt(String(raw ?? ''), 10);
+  if (!Number.isFinite(n) || n < 1) {
+    return DEFAULT_LIMIT;
+  }
+  return Math.min(n, MAX_LIMIT);
+}
+
+/** Filtro opcional contra una whitelist: ausente/vacío ⇒ sin filtro; inválido ⇒ 400. */
+function parseFilter<T extends string>(raw: unknown, valid: readonly T[], name: string): T | undefined {
+  if (raw === undefined || raw === null || raw === '') return undefined;
+  if (typeof raw === 'string' && (valid as readonly string[]).includes(raw)) {
+    return raw as T;
+  }
+  throw new ValidationError(`${name} must be one of: ${valid.join(', ')}`);
+}
+
 /**
  * Genera una contraseña temporal aleatoria (URL-safe, ~16 chars). Se devuelve
  * UNA sola vez en la respuesta de creación (mismo patrón que la clave del .pfx):
@@ -28,19 +57,41 @@ function generateTemporaryPassword(): string {
 }
 
 /**
- * GET /users — (admin) lista todos los usuarios como `SafeUser` (sin passwordHash).
- * Respuesta: `{ success, data: { users: SafeUser[] } }`.
+ * GET /users — (admin) listado paginado de usuarios como `SafeUser`.
+ *
+ * Query params: `page` (>=1, def. 1), `limit` (1..100, def. 10),
+ * `rol` (admin|user), `estado` (activo|inactivo|pendiente),
+ * `q` (busca en username, nombre y correo). Pendientes primero.
+ *
+ * Respuesta: `{ success, data: { users, pagination: { page, limit, total,
+ * totalPages }, pendingTotal } }` — `pendingTotal` es el global de pendientes,
+ * independiente de página y filtros (píldora del encabezado).
  */
 export const listUsers = async (
-  _req: Request,
+  req: Request,
   res: Response,
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const users = await UserModel.list();
+    const page = parsePage(req.query.page);
+    const limit = parseLimit(req.query.limit);
+    const rol = parseFilter(req.query.rol, VALID_ROLES, 'rol');
+    const estado = parseFilter(req.query.estado, VALID_STATUSES, 'estado');
+    const q = String(req.query.q ?? '').trim().slice(0, MAX_SEARCH_LENGTH) || undefined;
+
+    const { users, total, pendingTotal } = await UserModel.listPage({ page, limit, rol, estado, q });
     res.json({
       success: true,
-      data: { users: users.map(toSafeUser) },
+      data: {
+        users: users.map(toSafeUser),
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+        pendingTotal,
+      },
     });
   } catch (error) {
     next(error);

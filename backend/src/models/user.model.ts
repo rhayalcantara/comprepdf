@@ -115,6 +115,23 @@ export interface UpdateUserInput {
   mustChangePassword?: boolean;
 }
 
+/** Opciones del listado paginado de usuarios (filtros opcionales). */
+export interface UserListOptions {
+  page: number;
+  limit: number;
+  rol?: UserRole;
+  estado?: UserStatus;
+  /** Texto a buscar en username, nombre o email (LIKE, literal). */
+  q?: string;
+}
+
+/** Página de usuarios: filas, total filtrado y total global de pendientes. */
+export interface UserPage {
+  users: User[];
+  total: number;
+  pendingTotal: number;
+}
+
 /**
  * Acceso a datos de usuarios. Métodos estáticos sobre el repositorio TypeORM,
  * mismo patrón que usan los controllers con `AppDataSource.getRepository(...)`.
@@ -136,8 +153,36 @@ export class UserModel {
     return this.repo().findOne({ where: { id } });
   }
 
-  static list(): Promise<User[]> {
-    return this.repo().find({ order: { createdAt: 'DESC' } });
+  /**
+   * Listado paginado con filtros para la página de administración.
+   *
+   * Los pendientes van primero (necesitan la acción del admin) y dentro de cada
+   * grupo los más recientes; el mismo orden que aplicaba el frontend cuando la
+   * tabla era completa, ahora en SQL para que sobreviva a la paginación.
+   * `pendingTotal` es el total GLOBAL de pendientes (ignora página y filtros):
+   * alimenta la píldora del encabezado.
+   */
+  static async listPage(opts: UserListOptions): Promise<UserPage> {
+    const qb = this.repo().createQueryBuilder('u');
+    if (opts.rol) {
+      qb.andWhere('u.rol = :rol', { rol: opts.rol });
+    }
+    if (opts.estado) {
+      qb.andWhere('u.estado = :estado', { estado: opts.estado });
+    }
+    if (opts.q) {
+      // % y _ del usuario se tratan como texto literal, no como comodines.
+      const q = `%${opts.q.replace(/[\\%_]/g, '\\$&')}%`;
+      qb.andWhere('(u.username LIKE :q OR u.nombre LIKE :q OR u.email LIKE :q)', { q });
+    }
+    const [users, total] = await qb
+      .orderBy("CASE WHEN u.estado = 'pendiente' THEN 0 ELSE 1 END", 'ASC')
+      .addOrderBy('u.createdAt', 'DESC')
+      .skip((opts.page - 1) * opts.limit)
+      .take(opts.limit)
+      .getManyAndCount();
+    const pendingTotal = await this.repo().count({ where: { estado: 'pendiente' } });
+    return { users, total, pendingTotal };
   }
 
   static async create(input: CreateUserInput): Promise<User> {

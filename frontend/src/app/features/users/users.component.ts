@@ -1,9 +1,12 @@
-import { Component, OnInit, computed, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
-import { ApiService, CreateUserPayload, UpdateUserPayload } from '../../core/services/api.service';
+import { ApiService, CreateUserPayload, Pagination, UpdateUserPayload } from '../../core/services/api.service';
 import { AuthService, SafeUser } from '../../core/services/auth.service';
+
+const PAGE_SIZE = 10;
+const SEARCH_DEBOUNCE_MS = 300;
 
 @Component({
   selector: 'app-users',
@@ -91,8 +94,45 @@ import { AuthService, SafeUser } from '../../core/services/auth.service';
 
       <!-- Tabla de usuarios -->
       <div class="sheet p-0 overflow-hidden">
+        <!-- Filtros -->
+        <div class="filters">
+          <div class="search-box">
+            <span class="material-icons">search</span>
+            <input class="search-input" type="search" maxlength="100"
+                   placeholder="Buscar por usuario, nombre o correo"
+                   [ngModel]="filterQ" (ngModelChange)="onSearchChange($event)">
+          </div>
+          <select class="mini-select" [(ngModel)]="filterRol" (ngModelChange)="onFilterChange()">
+            <option value="">Todos los roles</option>
+            <option value="admin">Administrador</option>
+            <option value="user">Usuario</option>
+          </select>
+          <select class="mini-select" [(ngModel)]="filterEstado" (ngModelChange)="onFilterChange()">
+            <option value="">Todos los estados</option>
+            <option value="activo">Activo</option>
+            <option value="pendiente">Pendiente</option>
+            <option value="inactivo">Inactivo</option>
+          </select>
+          @if (hasFilters()) {
+            <button class="link-btn" (click)="clearFilters()">Limpiar filtros</button>
+          }
+        </div>
+
         @if (loading()) {
           <p class="text-ink-soft text-center py-10 m-0">Cargando…</p>
+        } @else if (users().length === 0) {
+          <div class="text-center py-10">
+            <p class="text-ink-soft m-0">
+              @if (hasFilters()) {
+                Ningún usuario coincide con los filtros.
+              } @else {
+                No hay usuarios.
+              }
+            </p>
+            @if (hasFilters()) {
+              <button class="link-btn mt-2" (click)="clearFilters()">Limpiar filtros</button>
+            }
+          </div>
         } @else {
           <div class="table-wrap">
             <table class="users-table">
@@ -106,7 +146,7 @@ import { AuthService, SafeUser } from '../../core/services/auth.service';
                 </tr>
               </thead>
               <tbody>
-                @for (u of sortedUsers(); track u.id) {
+                @for (u of users(); track u.id) {
                   <tr [class.row-pending]="u.estado === 'pendiente'">
                     <td>
                       <span class="font-medium">{{ u.username }}</span>
@@ -156,6 +196,25 @@ import { AuthService, SafeUser } from '../../core/services/auth.service';
             </table>
           </div>
         }
+
+        <!-- Paginación (mismo patrón que "Mis trabajos") -->
+        @if (pagination(); as p) {
+          @if (p.total > 0) {
+            <div class="pager">
+              <span class="text-sm text-ink-soft">
+                {{ p.total }} usuario(s) · página {{ p.page }} de {{ p.totalPages || 1 }}
+              </span>
+              <div class="flex gap-2">
+                <button class="btn-secondary" [disabled]="p.page <= 1 || loading()" (click)="goto(p.page - 1)">
+                  Anterior
+                </button>
+                <button class="btn-secondary" [disabled]="p.page >= p.totalPages || loading()" (click)="goto(p.page + 1)">
+                  Siguiente
+                </button>
+              </div>
+            </div>
+          }
+        }
       </div>
 
       <!-- Modal: editar usuario -->
@@ -200,6 +259,11 @@ import { AuthService, SafeUser } from '../../core/services/auth.service';
     .temp-code { display:inline-block; margin-top:0.5rem; padding:0.35rem 0.7rem; background:#fff; border:1px solid var(--line); border-radius:8px; font-size:0.95rem; letter-spacing:0.02em; }
     .btn-secondary { border:1px solid var(--line); background:var(--paper); color:var(--ink); border-radius:8px; padding:0.5rem 0.9rem; font-weight:600; cursor:pointer; font-family:inherit; white-space:nowrap; display:inline-flex; align-items:center; gap:0.35rem; }
     .btn-secondary:hover { border-color:var(--cobalt); color:var(--cobalt); }
+    .filters { display:flex; align-items:center; gap:0.6rem; padding:0.85rem 1rem; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+    .search-box { display:flex; align-items:center; gap:0.4rem; flex:1; min-width:14rem; border:1px solid var(--line); border-radius:8px; padding:0.35rem 0.6rem; background:var(--paper); }
+    .search-box .material-icons { font-size:18px; color:var(--ink-soft); }
+    .search-input { border:none; outline:none; background:transparent; flex:1; font-family:inherit; font-size:0.9rem; color:var(--ink); }
+    .pager { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:0.85rem 1rem; border-top:1px solid var(--line); flex-wrap:wrap; }
     .table-wrap { overflow-x:auto; }
     .users-table { width:100%; border-collapse:collapse; }
     .users-table th { text-align:left; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.03em; color:var(--ink-soft); padding:0.75rem 1rem; border-bottom:1px solid var(--line); white-space:nowrap; }
@@ -225,15 +289,19 @@ import { AuthService, SafeUser } from '../../core/services/auth.service';
     .modal-card { width:100%; max-width:30rem; background:var(--paper); }
   `]
 })
-export class UsersComponent implements OnInit {
+export class UsersComponent implements OnInit, OnDestroy {
   users = signal<SafeUser[]>([]);
-  /** Los pendientes primero (atención del admin); el resto en su orden original. */
-  sortedUsers = computed(() => {
-    const rank = (e: SafeUser['estado']) => (e === 'pendiente' ? 0 : 1);
-    return [...this.users()].sort((a, b) => rank(a.estado) - rank(b.estado));
-  });
-  pendingCount = computed(() => this.users().filter((u) => u.estado === 'pendiente').length);
+  pagination = signal<Pagination | null>(null);
+  /** Total GLOBAL de pendientes (lo trae el backend; ignora página y filtros). */
+  pendingCount = signal(0);
   loading = signal(false);
+
+  // Filtros (el orden pendientes-primero lo aplica el backend)
+  filterQ = '';
+  filterRol = '';
+  filterEstado = '';
+  private page = signal(1);
+  private searchTimer: ReturnType<typeof setTimeout> | null = null;
   busy = signal(false);
   showCreate = signal(false);
   tempPassword = signal<string | null>(null);
@@ -254,18 +322,65 @@ export class UsersComponent implements OnInit {
     this.load();
   }
 
+  ngOnDestroy(): void {
+    if (this.searchTimer) clearTimeout(this.searchTimer);
+  }
+
   load(): void {
     this.loading.set(true);
-    this.api.getUsers().subscribe({
+    const filters = { rol: this.filterRol, estado: this.filterEstado, q: this.filterQ };
+    this.api.getUsers(this.page(), PAGE_SIZE, filters).subscribe({
       next: (res) => {
         this.loading.set(false);
-        if (res.success && res.data) this.users.set(res.data.users);
+        if (res.success && res.data) {
+          this.users.set(res.data.users);
+          this.pagination.set(res.data.pagination);
+          this.pendingCount.set(res.data.pendingTotal);
+          // Página fuera de rango (p. ej. tras borrar filtros o desactivar el
+          // último de la página): retrocede a la última con contenido.
+          const p = res.data.pagination;
+          if (p.page > 1 && res.data.users.length === 0 && p.total > 0) {
+            this.goto(p.totalPages);
+          }
+        }
       },
       error: () => {
         this.loading.set(false);
         this.snackBar.open('No se pudo cargar la lista de usuarios.', 'Cerrar', { duration: 3000 });
       },
     });
+  }
+
+  onSearchChange(value: string): void {
+    this.filterQ = value;
+    if (this.searchTimer) clearTimeout(this.searchTimer);
+    this.searchTimer = setTimeout(() => {
+      this.page.set(1);
+      this.load();
+    }, SEARCH_DEBOUNCE_MS);
+  }
+
+  onFilterChange(): void {
+    this.page.set(1);
+    this.load();
+  }
+
+  hasFilters(): boolean {
+    return !!(this.filterQ.trim() || this.filterRol || this.filterEstado);
+  }
+
+  clearFilters(): void {
+    this.filterQ = '';
+    this.filterRol = '';
+    this.filterEstado = '';
+    this.page.set(1);
+    this.load();
+  }
+
+  goto(page: number): void {
+    if (page < 1) return;
+    this.page.set(page);
+    this.load();
   }
 
   isSelf(u: SafeUser): boolean {
