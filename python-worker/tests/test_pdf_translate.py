@@ -152,14 +152,36 @@ def test_ollama_down_gives_clear_error(tmp_path):
             translate_pdf(src, tmp_path / 'out.pdf', 'en')
 
 
-def test_misaligned_llm_output_fails_after_retry(tmp_path):
-    """El LLM devuelve un número distinto de traducciones: reintenta y falla claro."""
+def test_misaligned_batch_falls_back_to_per_segment(tmp_path):
+    """Lote desalineado tras el reintento: degrada a segmento-a-segmento."""
     src = tmp_path / 'in.pdf'
-    make_text_pdf(src, ['Hola'])
-    with patch.object(pdf_translate, '_chat', return_value=[]) as chat:
-        with pytest.raises(ValueError, match='inconsistent result'):
-            translate_pdf(src, tmp_path / 'out.pdf', 'en')
-    assert chat.call_count == 2  # intento + un reintento
+    make_text_pdf(src, ['Hola mundo', 'Adios mundo'])
+    out = tmp_path / 'out.pdf'
+
+    def chat(segments, language):
+        if len(segments) > 1:
+            return []  # el lote pierde la alineación siempre
+        return [f'[EN] {segments[0]}']
+
+    with patch.object(pdf_translate, '_chat', side_effect=chat) as spy:
+        translate_pdf(src, out, 'en')
+
+    text = _pdf_text(out)
+    assert '[EN] Hola mundo' in text
+    assert '[EN] Adios mundo' in text
+    # 2 intentos del lote + 1 por cada segmento
+    assert spy.call_count == 4
+
+
+def test_llm_total_failure_keeps_original_text(tmp_path):
+    """Si ni el modo por segmento responde bien, el bloque conserva su texto
+    original en vez de tumbar el job (Ollama caído es otro camino: ValueError)."""
+    src = tmp_path / 'in.pdf'
+    make_text_pdf(src, ['Hola mundo'])
+    out = tmp_path / 'out.pdf'
+    with patch.object(pdf_translate, '_chat', return_value=[]):
+        translate_pdf(src, out, 'en')
+    assert 'Hola mundo' in _pdf_text(out)
 
 
 # --- handler ---

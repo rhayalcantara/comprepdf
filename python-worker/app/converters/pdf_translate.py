@@ -34,8 +34,9 @@ OLLAMA_UNAVAILABLE = (
 
 MIN_FONT_SIZE = 6.0
 # Lotes acotados: con demasiados segmentos por petición el LLM pierde la
-# alineación 1:1 entrada/salida con más frecuencia.
-MAX_SEGMENTS_PER_REQUEST = 40
+# alineación 1:1 entrada/salida con más frecuencia (visto en QA con un
+# whitepaper denso el 2026-07-22).
+MAX_SEGMENTS_PER_REQUEST = 25
 
 # El LLM debe devolver exactamente una traducción por segmento, en orden.
 _RESPONSE_SCHEMA = {
@@ -161,7 +162,20 @@ def _translate_batch(segments: List[str], language: str) -> List[str]:
         translations = _chat(segments, language)
         if len(translations) == len(segments):
             return translations
-    raise ValueError('The translation model returned an inconsistent result; try again')
+    # Degradación: segmento a segmento. Más lento (una petición por bloque)
+    # pero la alineación queda garantizada; convierte el fallo duro que se vio
+    # en QA en un éxito lento.
+    return [_translate_single(s, language) for s in segments]
+
+
+def _translate_single(segment: str, language: str) -> str:
+    for attempt in (1, 2):
+        translations = _chat([segment], language)
+        if len(translations) >= 1 and translations[0].strip():
+            return translations[0]
+    # Último recurso: conservar el texto original de ESTE bloque en vez de
+    # tumbar el job entero. (Si Ollama está caído, _post_chat ya lanzó antes.)
+    return segment
 
 
 def _chat(segments: List[str], language: str) -> List[str]:
