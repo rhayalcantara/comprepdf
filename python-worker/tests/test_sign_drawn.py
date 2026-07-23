@@ -196,6 +196,43 @@ def test_drawn_clamp_oversize_height(tmp_path):
     assert y == pytest.approx(0.0)
 
 
+def test_drawn_survives_dirty_graphics_state(tmp_path):
+    """Regresión (volantes/reportes de la cooperativa): el contenido del PDF
+    termina con un `q` sin cerrar y una CTM activa (escala+traslación). La
+    firma debe caer EXACTAMENTE donde se colocó, no heredar esa matriz —
+    antes salía encogida o directamente fuera de la página.
+
+    Se mide el resultado RENDERIZADO (fitz), no los operadores crudos: el bug
+    estaba en la matriz efectiva, no en los números de nuestro `cm`.
+    """
+    import fitz
+
+    src = tmp_path / 'in.pdf'
+    pdf = pikepdf.new()
+    page = pdf.add_blank_page(page_size=(612, 792))
+    page.contents_add(b'q 0.75 0 0 0.75 50 100 cm 0 0 1 rg 0 0 10 10 re f\n')
+    pdf.save(src)
+    sig = tmp_path / 'sig.png'
+    make_signature_png(sig)  # 400x160 -> aspect 0.4
+    cur = FakeCursor([_original(src)])
+    handle_sign({'id': 'j1', 'operation_params': {
+        'mode': 'drawn', 'signature_path': str(sig),
+        'pages': '1', 'x': 0.5, 'y': 0.5, 'w': 0.2}}, cur)
+
+    doc = fitz.open(str(cur.output_paths()[0]))
+    page_out = doc[0]
+    rects = [r for info in page_out.get_images(full=True)
+             for r in page_out.get_image_rects(info[0])]
+    doc.close()
+
+    assert len(rects) == 1
+    r = rects[0]
+    assert r.x0 == pytest.approx(0.5 * 612, abs=0.5)
+    assert 792 - r.y1 == pytest.approx(0.5 * 792, abs=0.5)  # sin sello: base = y
+    assert r.width == pytest.approx(0.2 * 612, abs=0.5)
+    assert r.height == pytest.approx(0.2 * 612 * 0.4, abs=0.5)
+
+
 # --- imagen: transparencia y validaciones ---
 
 def test_drawn_transparent_png_has_smask(tmp_path):

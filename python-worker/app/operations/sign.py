@@ -208,9 +208,16 @@ def _stamp_drawn_signature(
             # add_resource crea /Resources//XObject si falta y genera un nombre
             # único, sin pisar recursos existentes de la página.
             name = page.add_resource(xobj, pikepdf.Name.XObject, prefix='SigImg')
-            # q...Q aísla la matriz para no heredar transformaciones previas.
+            # Muchos PDFs reales terminan su contenido con un `q` sin cerrar y
+            # una CTM activa (visto con los volantes/reportes de la cooperativa:
+            # la firma salía encogida o fuera de página). Se envuelve el
+            # contenido ORIGINAL en q...Q —lo mismo que hace add_overlay, por
+            # eso el sello nunca se desplazaba— para que nuestros operadores
+            # partan del estado gráfico inicial de la página.
+            page.contents_coalesce()
+            page.contents_add(b'q\n', prepend=True)
             # La imagen se apoya SOBRE el sello, de ahí el py + stamp_h.
-            ops = (f"q {rect_w:.4f} 0 0 {rect_h:.4f} {px:.4f} {py + stamp_h:.4f} cm "
+            ops = (f"\nQ q {rect_w:.4f} 0 0 {rect_h:.4f} {px:.4f} {py + stamp_h:.4f} cm "
                    f"{name} Do Q\n")
             page.contents_add(ops.encode('ascii'))
             if lines:
