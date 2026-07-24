@@ -48,7 +48,8 @@ export interface OrganizedPage {
 /** Una edición a estampar sobre el PDF (convención de coordenadas de la firma). */
 export interface PdfEdit {
   type: 'text' | 'image' | 'whiteout'
-    | 'highlight' | 'underline' | 'strikeout' | 'line' | 'arrow' | 'rect' | 'ellipse' | 'mark';
+    | 'highlight' | 'underline' | 'strikeout' | 'line' | 'arrow' | 'rect' | 'ellipse' | 'mark'
+    | 'freehand' | 'polygon' | 'cloud' | 'callout' | 'stamp';
   page: number;
   x: number;
   y: number;
@@ -66,6 +67,12 @@ export interface PdfEdit {
   dir?: 'up' | 'down';
   /** Subtipo de la marca rápida (solo type 'mark'). */
   mark?: 'cross' | 'check' | 'dot';
+  /** Puntos del trazo, normalizados a la caja con y hacia arriba (freehand/polygon). */
+  points?: number[][];
+  /** Punta de la flecha de la llamada, en fracciones de página con y hacia arriba. */
+  tip?: number[];
+  /** El sello añade la fecha-hora del servidor al procesar. */
+  show_datetime?: boolean;
 }
 
 /** Conteo agnóstico por operación (bloque `byOperation` del overview). */

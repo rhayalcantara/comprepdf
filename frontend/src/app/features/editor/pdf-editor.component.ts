@@ -7,23 +7,32 @@ import { Subscription, finalize, interval, switchMap, takeWhile } from 'rxjs';
 import { ApiService, PdfEdit } from '../../core/services/api.service';
 import { PdfDocHandle, PdfPreviewService } from '../../shared/pdf-preview/pdf-preview.service';
 
-type ShapeType = 'highlight' | 'underline' | 'strikeout' | 'line' | 'arrow' | 'rect' | 'ellipse' | 'mark';
+type ShapeType = 'highlight' | 'underline' | 'strikeout' | 'line' | 'arrow' | 'rect' | 'ellipse' | 'mark'
+  | 'freehand' | 'polygon' | 'cloud' | 'callout' | 'stamp';
 type ElementType = 'text' | 'image' | 'whiteout' | ShapeType;
 type MarkKind = 'cross' | 'check' | 'dot';
+/** Modo de interacción sobre la página: seleccionar, trazar o poner vértices. */
+type CanvasMode = 'select' | 'draw' | 'poly';
 
-/** Formas de la Fase 1 de marcado: se envían con color/grosor de trazo. */
+/** Formas de marcado (Fases 1 y 2): se envían con color/grosor de trazo. */
 const SHAPE_TYPES: readonly ShapeType[] = [
   'highlight', 'underline', 'strikeout', 'line', 'arrow', 'rect', 'ellipse', 'mark',
+  'freehand', 'polygon', 'cloud', 'callout', 'stamp',
 ];
 
 const HIGHLIGHT_COLOR = '#FFDE21';
 const STROKE_COLOR = '#B42318';
 const CHECK_COLOR = '#027A48';
+const STAMP_PRESETS = ['AUTORIZADO', 'PAGADO', 'RECIBIDO', 'ANULADO'] as const;
+/** Distancia mínima entre puntos capturados del trazo (fracción del marco). */
+const DRAW_MIN_STEP = 0.004;
 
 const TYPE_LABELS: Record<ElementType, string> = {
   text: 'Texto', image: 'Imagen', whiteout: 'Tapar y escribir',
   highlight: 'Resaltado', underline: 'Subrayado', strikeout: 'Tachado',
   line: 'Línea', arrow: 'Flecha', rect: 'Recuadro', ellipse: 'Círculo', mark: 'Marca',
+  freehand: 'Dibujo libre', polygon: 'Polígono', cloud: 'Nube',
+  callout: 'Llamada de texto', stamp: 'Sello',
 };
 
 /** Un elemento colocado sobre el PDF. Fracciones con origen ARRIBA-izquierda
@@ -46,6 +55,13 @@ interface EditorElement {
   dir: 'up' | 'down';
   /** Subtipo de la marca rápida. */
   mark: MarkKind;
+  /** Puntos del trazo normalizados a la caja, y hacia ARRIBA (freehand/polygon). */
+  points?: number[][];
+  /** Punta de la flecha de la llamada, fracciones de página con origen arriba. */
+  tipX?: number;
+  tipY?: number;
+  /** El sello incluye la fecha-hora (la pone el servidor al procesar). */
+  showDatetime?: boolean;
   imageUrl?: string;
   imageFile?: File;
   imageAspect?: number;
@@ -85,7 +101,7 @@ export class PdfEditorComponent implements OnDestroy {
   private renderSeq = 0;
   private pollSub?: Subscription;
   private drag: {
-    kind: 'move' | 'resize';
+    kind: 'move' | 'resize' | 'tip';
     el: EditorElement;
     startX: number;
     startY: number;
@@ -95,6 +111,8 @@ export class PdfEditorComponent implements OnDestroy {
     height: number;
     frameW: number;
     frameH: number;
+    tipX: number;
+    tipY: number;
   } | null = null;
 
   @ViewChild('pageCanvas') private canvasRef?: ElementRef<HTMLCanvasElement>;
@@ -263,6 +281,208 @@ export class PdfEditorComponent implements OnDestroy {
     });
   }
 
+  // --- Fase 2: dibujo libre, polígono, nube, llamada y sellos ---
+
+  mode: CanvasMode = 'select';
+  readonly stampPresets = STAMP_PRESETS;
+  /** Trazo en curso (dibujo libre), en fracciones del marco, origen arriba. */
+  drawDraft: number[][] = [];
+  /** Vértices del polígono en curso, en fracciones del marco, origen arriba. */
+  polyDraft: number[][] = [];
+
+  toggleMode(mode: CanvasMode): void {
+    this.mode = this.mode === mode ? 'select' : mode;
+    this.drawDraft = [];
+    this.polyDraft = [];
+    if (this.mode !== 'select') this.selectedId = '';
+  }
+
+  addCloud(): void {
+    this.add({ type: 'cloud', width: 0.3, height: 0.15, color: STROKE_COLOR });
+  }
+
+  addCallout(): void {
+    const width = 0.28;
+    const height = 0.06;
+    const left = clamp(0.5 - width / 2, 0, 1 - width);
+    const top = 0.35;
+    this.add({
+      type: 'callout', text: 'Escribe aquí', width, height,
+      color: STROKE_COLOR,
+      tipX: clamp(left - 0.08, 0, 1),
+      tipY: clamp(top + height + 0.12, 0, 1),
+    });
+  }
+
+  addStamp(preset: string): void {
+    this.add({
+      type: 'stamp', text: preset, width: 0.26, height: 0.055,
+      color: STROKE_COLOR, strokeWidth: 2.5, showDatetime: false,
+    });
+  }
+
+  /** Posición del puntero en fracciones del marco (origen arriba-izquierda). */
+  private framePoint(ev: PointerEvent | MouseEvent): number[] | null {
+    const rect = this.frameRef?.nativeElement.getBoundingClientRect();
+    if (!rect || rect.width <= 0) return null;
+    return [
+      clamp((ev.clientX - rect.left) / rect.width, 0, 1),
+      clamp((ev.clientY - rect.top) / rect.height, 0, 1),
+    ];
+  }
+
+  onFramePointerDown(ev: PointerEvent): void {
+    if (this.mode === 'draw') {
+      ev.preventDefault();
+      const p = this.framePoint(ev);
+      if (p) {
+        this.drawDraft = [p];
+        (ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId);
+      }
+    } else if (this.mode === 'poly') {
+      ev.preventDefault();
+      const p = this.framePoint(ev);
+      if (p) this.polyDraft = [...this.polyDraft, p];
+    }
+  }
+
+  onFramePointerMove(ev: PointerEvent): void {
+    if (this.mode !== 'draw' || !this.drawDraft.length) return;
+    const p = this.framePoint(ev);
+    if (!p) return;
+    const last = this.drawDraft[this.drawDraft.length - 1];
+    if (Math.hypot(p[0] - last[0], p[1] - last[1]) >= DRAW_MIN_STEP) {
+      this.drawDraft = [...this.drawDraft, p];
+    }
+  }
+
+  onFramePointerUp(): void {
+    if (this.mode !== 'draw' || this.drawDraft.length < 2) {
+      this.drawDraft = [];
+      return;
+    }
+    this.finishStroke('freehand', this.drawDraft);
+    this.drawDraft = [];
+    // El modo dibujo sigue activo: cada trazo es un elemento independiente.
+  }
+
+  /** Cierra el polígono en curso (doble clic o botón Terminar). */
+  finishPolygon(): void {
+    if (this.polyDraft.length >= 3) {
+      this.finishStroke('polygon', this.polyDraft);
+    }
+    this.polyDraft = [];
+    this.mode = 'select';
+  }
+
+  /** Convierte puntos del marco en un elemento con caja + puntos relativos (y arriba). */
+  private finishStroke(type: 'freehand' | 'polygon', framePoints: number[][]): void {
+    const xs = framePoints.map((p) => p[0]);
+    const ys = framePoints.map((p) => p[1]);
+    const minX = Math.min(...xs);
+    const minY = Math.min(...ys);
+    const width = Math.max(Math.max(...xs) - minX, 0.01);
+    const height = Math.max(Math.max(...ys) - minY, 0.01);
+    const points = framePoints.map((p) => [
+      round((p[0] - minX) / width),
+      round(1 - (p[1] - minY) / height),  // flip a convención PDF (y arriba)
+    ]);
+    this.add({
+      type, points, width, height,
+      color: STROKE_COLOR, strokeWidth: 2.5,
+    });
+    // add() centra el elemento: recolocarlo donde se dibujó de verdad.
+    const el = this.elements[this.elements.length - 1];
+    el.left = minX;
+    el.top = minY;
+  }
+
+  // --- SVG del preview ---
+
+  /** Puntos del trazo como atributo points de SVG (viewBox 0-100, y abajo). */
+  svgPoints(el: EditorElement): string {
+    return (el.points ?? [])
+      .map((p) => `${(p[0] * 100).toFixed(1)},${((1 - p[1]) * 100).toFixed(1)}`)
+      .join(' ');
+  }
+
+  /** Puntos del draft (marco) como points de SVG en porcentaje del marco. */
+  draftPoints(points: number[][]): string {
+    return points.map((p) => `${(p[0] * 100).toFixed(2)},${(p[1] * 100).toFixed(2)}`).join(' ');
+  }
+
+  /** viewBox proporcional a los píxeles de la caja (para arcos sin distorsión). */
+  cloudView(el: EditorElement): string {
+    return `0 0 ${this.cloudW(el).toFixed(1)} ${this.cloudH(el).toFixed(1)}`;
+  }
+
+  cloudW(el: EditorElement): number {
+    return Math.max(1, el.width * (this.frameWidth ?? 600));
+  }
+
+  cloudH(el: EditorElement): number {
+    return Math.max(1, el.height * (this.frameWidth ?? 600) * this.pageAspect);
+  }
+
+  /** Path de la nube: semicírculos hacia afuera por el perímetro (px de la caja). */
+  cloudPath(el: EditorElement): string {
+    const w = this.cloudW(el);
+    const h = this.cloudH(el);
+    const r = Math.max(4, Math.min(Math.min(w, h) / 6, 14));
+    const nx = Math.max(2, Math.round(w / (2 * r)));
+    const ny = Math.max(2, Math.round(h / (2 * r)));
+    const sx = w / nx;
+    const sy = h / ny;
+    const parts: string[] = [];
+    for (let i = 0; i < nx; i++) {
+      const x0 = i * sx;
+      parts.push(`M ${x0} 0 A ${sx / 2} ${r} 0 0 1 ${x0 + sx} 0`);        // arriba
+      parts.push(`M ${x0} ${h} A ${sx / 2} ${r} 0 0 0 ${x0 + sx} ${h}`);  // abajo
+    }
+    for (let j = 0; j < ny; j++) {
+      const y0 = j * sy;
+      parts.push(`M 0 ${y0} A ${r} ${sy / 2} 0 0 0 0 ${y0 + sy}`);        // izquierda
+      parts.push(`M ${w} ${y0} A ${r} ${sy / 2} 0 0 1 ${w} ${y0 + sy}`);  // derecha
+    }
+    return parts.join(' ');
+  }
+
+  /** Posición del tip de la llamada en % RELATIVOS a la caja (puede salirse). */
+  tipLeftPct(el: EditorElement): number {
+    return (((el.tipX ?? 0) - el.left) / el.width) * 100;
+  }
+
+  tipTopPct(el: EditorElement): number {
+    return (((el.tipY ?? 0) - el.top) / el.height) * 100;
+  }
+
+  /** Fecha de VISTA PREVIA del sello (la real la pone el servidor al procesar). */
+  stampDate(): string {
+    const now = new Date();
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${p(now.getDate())}/${p(now.getMonth() + 1)}/${now.getFullYear()} ${p(now.getHours())}:${p(now.getMinutes())}`;
+  }
+
+  /** Zoom con Ctrl+rueda, manteniendo el punto bajo el cursor. */
+  async onWheel(ev: WheelEvent): Promise<void> {
+    if (!ev.ctrlKey || !this.doc) return;
+    ev.preventDefault();
+    const scroll = (ev.currentTarget as HTMLElement);
+    const frame = this.frameRef?.nativeElement;
+    if (!frame) return;
+    const rect = frame.getBoundingClientRect();
+    const fx = (ev.clientX - rect.left) / Math.max(rect.width, 1);
+    const fy = (ev.clientY - rect.top) / Math.max(rect.height, 1);
+    const prev = this.zoom;
+    this.setZoom(this.zoom * (ev.deltaY < 0 ? 1.15 : 1 / 1.15));
+    if (this.zoom === prev) return;
+    // Tras el re-render, recolocar el scroll para que el punto siga bajo el cursor.
+    await new Promise((r) => setTimeout(r, 60));
+    const nrect = frame.getBoundingClientRect();
+    scroll.scrollLeft += fx * nrect.width - (ev.clientX - nrect.left);
+    scroll.scrollTop += fy * nrect.height - (ev.clientY - nrect.top);
+  }
+
   async onImage(event: Event): Promise<void> {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
@@ -318,7 +538,7 @@ export class PdfEditorComponent implements OnDestroy {
 
   // --- arrastre / redimensión (adaptado de sign-placement) ---
 
-  startDrag(ev: PointerEvent, el: EditorElement, kind: 'move' | 'resize'): void {
+  startDrag(ev: PointerEvent, el: EditorElement, kind: 'move' | 'resize' | 'tip'): void {
     ev.preventDefault();
     ev.stopPropagation();
     const rect = this.frameRef?.nativeElement.getBoundingClientRect();
@@ -330,6 +550,7 @@ export class PdfEditorComponent implements OnDestroy {
       startX: ev.clientX, startY: ev.clientY,
       left: el.left, top: el.top, width: el.width, height: el.height,
       frameW: rect.width, frameH: rect.height,
+      tipX: el.tipX ?? 0, tipY: el.tipY ?? 0,
     };
   }
 
@@ -338,7 +559,10 @@ export class PdfEditorComponent implements OnDestroy {
     if (!d) return;
     const dx = (ev.clientX - d.startX) / d.frameW;
     const dy = (ev.clientY - d.startY) / d.frameH;
-    if (d.kind === 'move') {
+    if (d.kind === 'tip') {
+      d.el.tipX = clamp(d.tipX + dx, 0, 1);
+      d.el.tipY = clamp(d.tipY + dy, 0, 1);
+    } else if (d.kind === 'move') {
       d.el.left = clamp(d.left + dx, 0, 1 - d.el.width);
       d.el.top = clamp(d.top + dy, 0, 1 - d.el.height);
     } else {
@@ -387,6 +611,17 @@ export class PdfEditorComponent implements OnDestroy {
         };
         if (el.type === 'line' || el.type === 'arrow') shape.dir = el.dir;
         if (el.type === 'mark') shape.mark = el.mark;
+        if (el.type === 'freehand' || el.type === 'polygon') shape.points = el.points ?? [];
+        if (el.type === 'callout') {
+          shape.text = el.text;
+          shape.font_size = el.fontSize;
+          // El tip viaja en convención PDF (y hacia arriba).
+          shape.tip = [round(el.tipX ?? 0), round(1 - (el.tipY ?? 0))];
+        }
+        if (el.type === 'stamp') {
+          shape.text = el.text;
+          shape.show_datetime = !!el.showDatetime;
+        }
         return shape;
       }
       return { ...base, type: 'text', text: el.text, font_size: el.fontSize, color: el.color };

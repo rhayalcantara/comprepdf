@@ -134,6 +134,45 @@ canvas { display: block; width: 100%; height: auto; }
 .el-fill { position: absolute; inset: 0; opacity: 0.35; pointer-events: none; }
 .el-shape { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
 
+// --- Fase 2 ---
+.tool-active { border-color: var(--cobalt) !important; background: var(--cobalt-soft) !important; }
+.stamp-btn {
+  justify-content: center; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em;
+  color: #b42318; border-color: #f1b3ac !important;
+}
+.mode-draw { cursor: crosshair; }
+.mode-active .el-box { pointer-events: none; }
+.draft-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.poly-vertex {
+  position: absolute; width: 8px; height: 8px; border-radius: 50%;
+  background: #b42318; border: 1.5px solid #fff; transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.el-bubble {
+  position: absolute; inset: 0; display: flex; align-items: center; padding: 2px 6px;
+  background: #fff; border: 1.5px solid; border-radius: 6px; line-height: 1.15;
+  white-space: pre-wrap; overflow: hidden; pointer-events: none;
+}
+.tip-handle {
+  position: absolute; width: 12px; height: 12px; border-radius: 50%;
+  background: #b42318; border: 2px solid #fff; transform: translate(-50%, -50%);
+  box-shadow: 0 1px 3px rgba(18, 35, 63, 0.35); cursor: grab; touch-action: none;
+}
+.el-stamp {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 1px;
+  border: 2px solid; border-radius: 6px; pointer-events: none;
+  font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;
+  container-type: size;
+}
+.el-stamp-text { font-size: 42cqh; line-height: 1; }
+.el-stamp-date { font-size: 24cqh; line-height: 1; font-weight: 600; }
+.check-field {
+  display: flex; align-items: flex-start; gap: 0.45rem; margin-bottom: 0.75rem;
+  font-size: 0.8rem; color: var(--ink-soft); cursor: pointer;
+  input { width: auto; margin-top: 2px; }
+}
+
 .el-handle {
   position: absolute; right: -7px; bottom: -7px; width: 14px; height: 14px;
   border-radius: 50%; background: var(--cobalt); border: 2px solid #fff;

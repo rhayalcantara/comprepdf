@@ -17,6 +17,7 @@ el dibujo de texto/imágenes/rectángulos.
 import io
 import json
 import math
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -44,14 +45,20 @@ LINE_LEADING = 1.2
 # Tope de píxeles al decodificar (defensa anti-bomba; el backend ya acota bytes).
 MAX_IMAGE_PX = 6000
 
-# --- Marcado y formas (Fase 1 de las herramientas tipo Acrobat) ---
+# --- Marcado y formas (Fases 1 y 2 de las herramientas tipo Acrobat) ---
 # Tipos que se dibujan como trazos/rellenos vectoriales sobre la caja x,y,w,h.
-SHAPE_TYPES = ('highlight', 'underline', 'strikeout', 'line', 'arrow', 'rect', 'ellipse', 'mark')
+SHAPE_TYPES = ('highlight', 'underline', 'strikeout', 'line', 'arrow', 'rect', 'ellipse', 'mark',
+               'freehand', 'polygon', 'cloud', 'callout', 'stamp')
 HIGHLIGHT_COLOR = '#FFDE21'
 HIGHLIGHT_ALPHA = 0.35
 DEFAULT_STROKE_COLOR = '#B42318'
 DEFAULT_STROKE_WIDTH = 2.0
 MIN_STROKE_WIDTH, MAX_STROKE_WIDTH = 0.5, 12.0
+# Fase 2
+MAX_FREEHAND_POINTS = 1500
+MAX_POLYGON_POINTS = 200
+MAX_STAMP_TEXT = 60
+STAMP_FONT = 'Helvetica-Bold'
 
 
 def _hex_color(value: Any, default: str) -> colors.Color:
@@ -183,7 +190,7 @@ def _draw_edit(pdf_canvas: canvas.Canvas, edit: Dict[str, Any], pw: float, ph: f
         return True
 
     if etype in SHAPE_TYPES:
-        _draw_shape(pdf_canvas, etype, edit, x, y, w, h)
+        _draw_shape(pdf_canvas, etype, edit, x, y, w, h, pw, ph)
         return True
 
     return False
@@ -198,7 +205,8 @@ def _stroke_width(edit: Dict[str, Any]) -> float:
 
 
 def _draw_shape(pdf_canvas: canvas.Canvas, etype: str, edit: Dict[str, Any],
-                x: float, y: float, w: float, h: float) -> None:
+                x: float, y: float, w: float, h: float,
+                pw: float, ph: float) -> None:
     """Dibuja un tipo de marcado/forma dentro de la caja (x,y,w,h).
 
     saveState/restoreState por edición: el alpha del resaltado y el grosor de
@@ -229,6 +237,14 @@ def _draw_shape(pdf_canvas: canvas.Canvas, etype: str, edit: Dict[str, Any],
             pdf_canvas.ellipse(x, y, x + w, y + h, fill=0, stroke=1)
         elif etype == 'mark':
             _draw_mark(pdf_canvas, edit, x, y, w, h, color)
+        elif etype in ('freehand', 'polygon'):
+            _draw_path(pdf_canvas, etype, edit, x, y, w, h)
+        elif etype == 'cloud':
+            _draw_cloud(pdf_canvas, x, y, w, h)
+        elif etype == 'callout':
+            _draw_callout(pdf_canvas, edit, x, y, w, h, color, pw, ph)
+        elif etype == 'stamp':
+            _draw_stamp_edit(pdf_canvas, edit, x, y, w, h, color, width)
     finally:
         pdf_canvas.restoreState()
 
@@ -243,12 +259,123 @@ def _draw_segment(pdf_canvas: canvas.Canvas, etype: str, edit: Dict[str, Any],
         x1, y1, x2, y2 = x, y, x + w, y + h
     pdf_canvas.line(x1, y1, x2, y2)
     if etype == 'arrow':
-        angle = math.atan2(y2 - y1, x2 - x1)
-        head = max(8.0, width * 4.0)
-        for delta in (math.radians(150), math.radians(-150)):
-            pdf_canvas.line(x2, y2,
-                            x2 + head * math.cos(angle + delta),
-                            y2 + head * math.sin(angle + delta))
+        _draw_arrowhead(pdf_canvas, x1, y1, x2, y2, width)
+
+
+def _draw_arrowhead(pdf_canvas: canvas.Canvas, x1: float, y1: float,
+                    x2: float, y2: float, width: float) -> None:
+    """Punta de flecha en (x2, y2), orientada según el segmento (x1,y1)->(x2,y2)."""
+    angle = math.atan2(y2 - y1, x2 - x1)
+    head = max(8.0, width * 4.0)
+    for delta in (math.radians(150), math.radians(-150)):
+        pdf_canvas.line(x2, y2,
+                        x2 + head * math.cos(angle + delta),
+                        y2 + head * math.sin(angle + delta))
+
+
+def _parse_points(edit: Dict[str, Any], max_points: int) -> List[Tuple[float, float]]:
+    """Puntos del trazo normalizados A LA CAJA (0-1, y hacia arriba), saneados."""
+    raw = edit.get('points')
+    if not isinstance(raw, list):
+        return []
+    points: List[Tuple[float, float]] = []
+    for item in raw[:max_points]:
+        try:
+            px, py = float(item[0]), float(item[1])
+        except (TypeError, ValueError, IndexError, KeyError):
+            continue
+        if math.isfinite(px) and math.isfinite(py):
+            points.append((min(max(px, 0.0), 1.0), min(max(py, 0.0), 1.0)))
+    return points
+
+
+def _draw_path(pdf_canvas: canvas.Canvas, etype: str, edit: Dict[str, Any],
+               x: float, y: float, w: float, h: float) -> None:
+    """Dibujo libre (trazo abierto) o polígono (cerrado): puntos escalados a la caja."""
+    limit = MAX_POLYGON_POINTS if etype == 'polygon' else MAX_FREEHAND_POINTS
+    points = _parse_points(edit, limit)
+    if len(points) < 2:
+        return
+    pdf_canvas.setLineJoin(1)  # esquinas redondeadas
+    path = pdf_canvas.beginPath()
+    path.moveTo(x + points[0][0] * w, y + points[0][1] * h)
+    for px, py in points[1:]:
+        path.lineTo(x + px * w, y + py * h)
+    if etype == 'polygon':
+        path.close()
+    pdf_canvas.drawPath(path, stroke=1, fill=0)
+
+
+def _draw_cloud(pdf_canvas: canvas.Canvas, x: float, y: float, w: float, h: float) -> None:
+    """Nube de revisión: semicírculos hacia afuera a lo largo del perímetro."""
+    radius = max(5.0, min(min(w, h) / 6.0, 14.0))
+    nx = max(2, int(round(w / (2 * radius))))
+    ny = max(2, int(round(h / (2 * radius))))
+    sx, sy = w / nx, h / ny
+    for i in range(nx):
+        x0, x1 = x + i * sx, x + (i + 1) * sx
+        pdf_canvas.arc(x0, y - radius, x1, y + radius, 180, 180)          # borde inferior
+        pdf_canvas.arc(x0, y + h - radius, x1, y + h + radius, 0, 180)    # borde superior
+    for j in range(ny):
+        y0, y1 = y + j * sy, y + (j + 1) * sy
+        pdf_canvas.arc(x - radius, y0, x + radius, y1, 90, 180)           # borde izquierdo
+        pdf_canvas.arc(x + w - radius, y0, x + w + radius, y1, 270, 180)  # borde derecho
+
+
+def _draw_callout(pdf_canvas: canvas.Canvas, edit: Dict[str, Any],
+                  x: float, y: float, w: float, h: float, color: colors.Color,
+                  pw: float, ph: float) -> None:
+    """Llamada de texto: burbuja blanca con borde + flecha hacia el tip (coords de página)."""
+    tip = edit.get('tip')
+    try:
+        tx = min(max(float(tip[0]), 0.0), 1.0) * pw
+        ty = min(max(float(tip[1]), 0.0), 1.0) * ph
+    except (TypeError, ValueError, IndexError):
+        tx = ty = None
+
+    # La línea primero: la burbuja tapa su arranque y queda limpio.
+    if tx is not None and not (x <= tx <= x + w and y <= ty <= y + h):
+        ax = min(max(tx, x), x + w)  # punto del borde de la caja más cercano al tip
+        ay = min(max(ty, y), y + h)
+        pdf_canvas.line(ax, ay, tx, ty)
+        _draw_arrowhead(pdf_canvas, ax, ay, tx, ty, _stroke_width(edit))
+
+    pdf_canvas.setFillColor(colors.white)
+    pdf_canvas.roundRect(x, y, w, h, min(6.0, h / 4), fill=1, stroke=1)
+    text = str(edit.get('text', '')).strip()
+    if text:
+        pad = 4.0
+        _draw_text(pdf_canvas, text, x + pad, y + pad, w - 2 * pad, h - 2 * pad,
+                   _font_size(edit), color)
+
+
+def _draw_stamp_edit(pdf_canvas: canvas.Canvas, edit: Dict[str, Any],
+                     x: float, y: float, w: float, h: float,
+                     color: colors.Color, stroke_width: float) -> None:
+    """Sello: borde redondeado + texto en mayúsculas ajustado + fecha opcional.
+
+    La fecha la pone el WORKER al procesar (como el sello de la firma): marca
+    cuándo se selló de verdad y no es falseable desde el navegador.
+    """
+    lines = [(str(edit.get('text', '')).strip() or 'SELLO')[:MAX_STAMP_TEXT].upper()]
+    if edit.get('show_datetime'):
+        lines.append(datetime.now().strftime('%d/%m/%Y %H:%M'))
+
+    pad = max(3.0, h * 0.12)
+    size = (h - 2 * pad) / (len(lines) * 1.25)
+    usable = w - 2 * pad
+    while size > 4.0 and any(
+            pdfmetrics.stringWidth(line, STAMP_FONT, size) > usable for line in lines):
+        size *= 0.92
+
+    pdf_canvas.roundRect(x, y, w, h, min(6.0, h / 4), fill=0, stroke=1)
+    pdf_canvas.setFillColor(color)
+    pdf_canvas.setFont(STAMP_FONT, size)
+    leading = size * 1.25
+    baseline = y + h - pad - size
+    for line in lines:
+        pdf_canvas.drawCentredString(x + w / 2, baseline, line)
+        baseline -= leading
 
 
 def _draw_mark(pdf_canvas: canvas.Canvas, edit: Dict[str, Any],

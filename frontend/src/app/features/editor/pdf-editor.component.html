@@ -72,6 +72,35 @@
       </div>
 
       <div class="section-divider"></div>
+      <p class="section-label">Dibujo</p>
+      <div class="tool-grid cols-2">
+        <button type="button" [class.tool-active]="mode === 'draw'" (click)="toggleMode('draw')">
+          <span>✎</span> Dibujo libre
+        </button>
+        <button type="button" [class.tool-active]="mode === 'poly'" (click)="toggleMode('poly')">
+          <span>⬠</span> Polígono
+        </button>
+        <button type="button" (click)="addCloud()"><span>☁</span> Nube</button>
+        <button type="button" (click)="addCallout()"><span>💬</span> Llamada</button>
+      </div>
+      @if (mode === 'draw') {
+        <p class="panel-hint">Traza sobre la página; cada trazo es un elemento. Vuelve a pulsar para salir.</p>
+      }
+      @if (mode === 'poly') {
+        <p class="panel-hint">Haz clic para poner vértices y doble clic (o Terminar) para cerrar.</p>
+        <button class="btn secondary full" type="button" (click)="finishPolygon()"
+                [disabled]="polyDraft.length < 3">Terminar polígono</button>
+      }
+
+      <div class="section-divider"></div>
+      <p class="section-label">Sellos</p>
+      <div class="tool-grid cols-2">
+        @for (preset of stampPresets; track preset) {
+          <button type="button" class="stamp-btn" (click)="addStamp(preset)">{{ preset }}</button>
+        }
+      </div>
+
+      <div class="section-divider"></div>
       <p class="section-label">Página</p>
       <div class="page-nav">
         <button type="button" (click)="goToPage(currentPage - 1)" [disabled]="currentPage <= 1">‹</button>
@@ -95,9 +124,32 @@
         <button type="button" title="Acercar" (click)="setZoom(zoom + 0.25)" [disabled]="zoom >= 3">+</button>
         <button type="button" class="zoom-fit" title="Ajustar al ancho" (click)="setZoom(1)" [disabled]="zoom === 1">Ajustar</button>
       </div>
-      <div class="canvas-scroll">
-        <div class="place-frame" #frame [style.width.px]="frameWidth">
+      <div class="canvas-scroll" (wheel)="onWheel($event)">
+        <div class="place-frame" #frame [style.width.px]="frameWidth"
+             [class.mode-active]="mode !== 'select'"
+             [class.mode-draw]="mode === 'draw'"
+             (pointerdown)="onFramePointerDown($event)"
+             (pointermove)="onFramePointerMove($event)"
+             (pointerup)="onFramePointerUp()"
+             (pointercancel)="onFramePointerUp()"
+             (dblclick)="mode === 'poly' && finishPolygon()">
         <canvas #pageCanvas></canvas>
+        <!-- Trazo / polígono en curso -->
+        @if (drawDraft.length > 1 || polyDraft.length > 0) {
+          <svg class="draft-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
+            @if (drawDraft.length > 1) {
+              <polyline [attr.points]="draftPoints(drawDraft)" fill="none" stroke="#B42318"
+                        stroke-width="2" vector-effect="non-scaling-stroke" />
+            }
+            @if (polyDraft.length > 0) {
+              <polyline [attr.points]="draftPoints(polyDraft)" fill="none" stroke="#B42318"
+                        stroke-width="2" stroke-dasharray="4 3" vector-effect="non-scaling-stroke" />
+            }
+          </svg>
+          @for (v of polyDraft; track $index) {
+            <span class="poly-vertex" [style.left.%]="v[0] * 100" [style.top.%]="v[1] * 100"></span>
+          }
+        }
         @for (el of elementsOnPage; track el.id) {
           <div class="el-box"
                [class.selected]="selectedId === el.id"
@@ -183,6 +235,49 @@
                   }
                 </svg>
               }
+              @case ('freehand') {
+                <svg class="el-shape" viewBox="0 0 100 100" preserveAspectRatio="none">
+                  <polyline [attr.points]="svgPoints(el)" fill="none" vector-effect="non-scaling-stroke"
+                            stroke-linejoin="round" stroke-linecap="round"
+                            [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
+                </svg>
+              }
+              @case ('polygon') {
+                <svg class="el-shape" viewBox="0 0 100 100" preserveAspectRatio="none">
+                  <polygon [attr.points]="svgPoints(el)" fill="none" vector-effect="non-scaling-stroke"
+                           stroke-linejoin="round"
+                           [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
+                </svg>
+              }
+              @case ('cloud') {
+                <svg class="el-shape" [attr.viewBox]="cloudView(el)" preserveAspectRatio="none">
+                  <path [attr.d]="cloudPath(el)" fill="none" vector-effect="non-scaling-stroke"
+                        [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
+                </svg>
+              }
+              @case ('callout') {
+                <svg class="el-shape" viewBox="0 0 100 100" preserveAspectRatio="none">
+                  <line x1="50" y1="50" [attr.x2]="tipLeftPct(el)" [attr.y2]="tipTopPct(el)"
+                        vector-effect="non-scaling-stroke"
+                        [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
+                </svg>
+                <span class="el-bubble" [style.border-color]="el.color"
+                      [style.color]="el.color" [style.font-size.px]="el.fontSize">{{ el.text }}</span>
+                <span class="tip-handle" title="Arrastra la punta de la flecha"
+                      [style.left.%]="tipLeftPct(el)" [style.top.%]="tipTopPct(el)"
+                      (pointerdown)="startDrag($event, el, 'tip')"
+                      (pointermove)="onDragMove($event)"
+                      (pointerup)="endDrag()"
+                      (pointercancel)="endDrag()"></span>
+              }
+              @case ('stamp') {
+                <span class="el-stamp" [style.border-color]="el.color" [style.color]="el.color">
+                  <span class="el-stamp-text">{{ el.text }}</span>
+                  @if (el.showDatetime) {
+                    <span class="el-stamp-date">{{ stampDate() }}</span>
+                  }
+                </span>
+              }
               @default {
                 <span class="el-text" [style.color]="el.type === 'whiteout' ? el.textColor : el.color"
                       [style.font-size.px]="el.fontSize">{{ el.text }}</span>
@@ -236,6 +331,27 @@
                 <option value="cross">✗ Cruz</option>
                 <option value="dot">● Punto</option>
               </select>
+            </label>
+          }
+          @if (el.type === 'callout') {
+            <label class="field">
+              <span>Texto</span>
+              <textarea rows="2" [(ngModel)]="el.text"></textarea>
+            </label>
+            <label class="field">
+              <span>Tamaño de letra</span>
+              <input type="number" min="4" max="96" [(ngModel)]="el.fontSize" />
+            </label>
+            <p class="panel-hint">Arrastra el punto rojo para apuntar la flecha.</p>
+          }
+          @if (el.type === 'stamp') {
+            <label class="field">
+              <span>Texto del sello</span>
+              <input maxlength="60" [(ngModel)]="el.text" />
+            </label>
+            <label class="check-field">
+              <input type="checkbox" [(ngModel)]="el.showDatetime" />
+              <span>Incluir fecha y hora (la pone el servidor al aplicar)</span>
             </label>
           }
           <p class="panel-hint">Arrastra el recuadro para mover y la esquina para cambiar el tamaño.</p>

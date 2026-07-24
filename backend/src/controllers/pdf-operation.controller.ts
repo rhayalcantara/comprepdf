@@ -564,14 +564,47 @@ const EDIT_TYPES = [
   'text', 'image', 'whiteout',
   // Fase 1 de marcado (tipo Acrobat): formas vectoriales sobre la caja x,y,w,h.
   'highlight', 'underline', 'strikeout', 'line', 'arrow', 'rect', 'ellipse', 'mark',
+  // Fase 2: trazos por puntos, nube de revisión, llamada de texto y sello.
+  'freehand', 'polygon', 'cloud', 'callout', 'stamp',
 ] as const;
 
 /** Tipos con trazo: aceptan stroke_width; line/arrow además aceptan dir. */
-const STROKE_TYPES = ['highlight', 'underline', 'strikeout', 'line', 'arrow', 'rect', 'ellipse', 'mark'] as const;
+const STROKE_TYPES = [
+  'highlight', 'underline', 'strikeout', 'line', 'arrow', 'rect', 'ellipse', 'mark',
+  'freehand', 'polygon', 'cloud', 'callout', 'stamp',
+] as const;
 const LINE_DIRS = ['up', 'down'] as const;
 const MARK_KINDS = ['cross', 'check', 'dot'] as const;
 const MIN_STROKE_WIDTH = 0.5;
 const MAX_STROKE_WIDTH = 12;
+const MAX_FREEHAND_POINTS = 1500;
+const MAX_POLYGON_POINTS = 200;
+const MAX_STAMP_EDIT_TEXT = 60;
+
+/**
+ * Valida la lista de puntos de freehand/polygon: pares [x, y] normalizados a la
+ * caja del elemento. Devuelve la lista redondeada a 4 decimales (acota el JSON
+ * que se persiste en operation_params).
+ */
+function validatePoints(raw: unknown, index: number, min: number, max: number): number[][] {
+  if (!Array.isArray(raw) || raw.length < min) {
+    throw new ValidationError(`Edit ${index + 1} needs at least ${min} points`);
+  }
+  if (raw.length > max) {
+    throw new ValidationError(`Edit ${index + 1} has too many points (max ${max})`);
+  }
+  return raw.map((entry, i) => {
+    if (!Array.isArray(entry) || entry.length !== 2) {
+      throw new ValidationError(`Edit ${index + 1} point ${i + 1} must be a [x, y] pair`);
+    }
+    const px = Number(entry[0]);
+    const py = Number(entry[1]);
+    if (!Number.isFinite(px) || !Number.isFinite(py) || px < 0 || px > 1 || py < 0 || py > 1) {
+      throw new ValidationError(`Edit ${index + 1} point ${i + 1} must be numbers between 0 and 1`);
+    }
+    return [Math.round(px * 10000) / 10000, Math.round(py * 10000) / 10000];
+  });
+}
 const MAX_ORGANIZE_PAGES = 5000;
 
 /**
@@ -705,6 +738,49 @@ function validateEdit(raw: unknown, index: number, images: Express.Multer.File[]
         throw new ValidationError(`Edit ${index + 1} mark must be one of: ${MARK_KINDS.join(', ')}`);
       }
       out.mark = mark;
+    }
+    if (type === 'freehand') {
+      out.points = validatePoints(e.points, index, 2, MAX_FREEHAND_POINTS);
+    }
+    if (type === 'polygon') {
+      out.points = validatePoints(e.points, index, 3, MAX_POLYGON_POINTS);
+    }
+    if (type === 'callout') {
+      const text = String(e.text ?? '').trim();
+      if (!text) {
+        throw new ValidationError(`Edit ${index + 1} (callout) needs a non-empty text`);
+      }
+      if (text.length > MAX_EDIT_TEXT) {
+        throw new ValidationError(`Edit ${index + 1} text is too long (max ${MAX_EDIT_TEXT})`);
+      }
+      out.text = text;
+      const fontSize = e.font_size === undefined ? 12 : Number(e.font_size);
+      if (!Number.isFinite(fontSize) || fontSize < 4 || fontSize > 96) {
+        throw new ValidationError(`Edit ${index + 1} font_size must be between 4 and 96`);
+      }
+      out.font_size = fontSize;
+      // El tip es la punta de la flecha, en fracciones DE LA PÁGINA.
+      const tip = e.tip;
+      if (!Array.isArray(tip) || tip.length !== 2) {
+        throw new ValidationError(`Edit ${index + 1} tip must be a [x, y] pair`);
+      }
+      const tx = Number(tip[0]);
+      const ty = Number(tip[1]);
+      if (!Number.isFinite(tx) || !Number.isFinite(ty) || tx < 0 || tx > 1 || ty < 0 || ty > 1) {
+        throw new ValidationError(`Edit ${index + 1} tip coordinates must be between 0 and 1`);
+      }
+      out.tip = [Math.round(tx * 10000) / 10000, Math.round(ty * 10000) / 10000];
+    }
+    if (type === 'stamp') {
+      const text = String(e.text ?? '').trim();
+      if (!text) {
+        throw new ValidationError(`Edit ${index + 1} (stamp) needs a non-empty text`);
+      }
+      if (text.length > MAX_STAMP_EDIT_TEXT) {
+        throw new ValidationError(`Edit ${index + 1} stamp text is too long (max ${MAX_STAMP_EDIT_TEXT})`);
+      }
+      out.text = text;
+      out.show_datetime = parseBool(e.show_datetime);
     }
   }
 

@@ -347,6 +347,120 @@ def test_alpha_does_not_leak_to_next_edit(tmp_path):
     assert r < 60 and g < 60 and b < 60, f'el trazo salió translúcido: {(r, g, b)}'
 
 
+# --- Fase 2: dibujo libre, polígono, nube, llamada y sello ---
+
+def test_phase2_types_add_overlay(tmp_path):
+    edits = [
+        {'type': 'freehand', 'page': 1, 'x': 0.1, 'y': 0.1, 'w': 0.3, 'h': 0.2,
+         'points': [[0, 0], [0.5, 1], [1, 0]]},
+        {'type': 'polygon', 'page': 1, 'x': 0.5, 'y': 0.1, 'w': 0.3, 'h': 0.2,
+         'points': [[0, 0], [1, 0], [0.5, 1]]},
+        {'type': 'cloud', 'page': 1, 'x': 0.1, 'y': 0.5, 'w': 0.3, 'h': 0.2},
+        {'type': 'callout', 'page': 1, 'x': 0.5, 'y': 0.5, 'w': 0.3, 'h': 0.1,
+         'text': 'Revisar esto', 'tip': [0.3, 0.4]},
+        {'type': 'stamp', 'page': 1, 'x': 0.3, 'y': 0.8, 'w': 0.3, 'h': 0.08,
+         'text': 'Autorizado', 'show_datetime': True},
+    ]
+    cur, result = _run(tmp_path, edits)
+    assert result == {'edits': 5}
+    out = pikepdf.open(cur.output_paths()[0])
+    assert _has_form_overlay(out.pages[0])
+
+
+def test_freehand_draws_along_points(tmp_path):
+    """Trazo en V dentro de la caja: hay tinta en el vértice inferior."""
+    cur, _ = _run(tmp_path, [
+        {'type': 'freehand', 'page': 1, 'x': 0.2, 'y': 0.4, 'w': 0.4, 'h': 0.2,
+         'points': [[0, 1], [0.5, 0], [1, 1]], 'stroke_width': 4},
+    ])
+    page = _render(cur.output_paths()[0])[0]
+    r, g, b = _pixel(page, 0.4, 0.4)  # vértice de la V (fondo de la caja)
+    assert r > 120 and g < 120, f'esperaba el trazo, vi {(r, g, b)}'
+    r2, g2, b2 = _pixel(page, 0.4, 0.55)  # centro alto de la caja: limpio
+    assert r2 > 240 and g2 > 240 and b2 > 240
+
+
+def test_polygon_closes_the_path(tmp_path):
+    """Triángulo: la arista de cierre (base) debe estar trazada."""
+    cur, _ = _run(tmp_path, [
+        {'type': 'polygon', 'page': 1, 'x': 0.2, 'y': 0.4, 'w': 0.4, 'h': 0.2,
+         'points': [[0, 0], [1, 0], [0.5, 1]], 'stroke_width': 4},
+    ])
+    page = _render(cur.output_paths()[0])[0]
+    r, g, b = _pixel(page, 0.4, 0.4)  # centro de la base = arista de cierre
+    assert r > 120 and g < 120, f'esperaba la arista de cierre, vi {(r, g, b)}'
+
+
+def test_cloud_scallops_reach_outside_box(tmp_path):
+    """Los semicírculos sobresalen del borde: hay tinta justo por fuera de la caja."""
+    cur, _ = _run(tmp_path, [
+        {'type': 'cloud', 'page': 1, 'x': 0.3, 'y': 0.4, 'w': 0.3, 'h': 0.2,
+         'stroke_width': 3},
+    ])
+    page = _render(cur.output_paths()[0])[0].convert('RGB')
+    w, h = page.size
+    # Banda fina justo bajo el borde inferior de la caja (y=0.4): los arcos
+    # hacia afuera dejan tinta ahí.
+    reddish = 0
+    for py in range(int(h * 0.60), int(h * 0.615)):
+        for px in range(int(w * 0.30), int(w * 0.60), 2):
+            r, g, b = page.getpixel((px, py))
+            if r > 120 and g < 120:
+                reddish += 1
+    assert reddish > 3, f'esperaba festones fuera de la caja, conté {reddish}'
+
+
+def test_callout_bubble_text_and_pointer(tmp_path):
+    cur, _ = _run(tmp_path, [
+        {'type': 'callout', 'page': 1, 'x': 0.5, 'y': 0.5, 'w': 0.3, 'h': 0.1,
+         'text': 'OJO AQUI', 'font_size': 18, 'color': '#B42318',
+         'tip': [0.2, 0.3], 'stroke_width': 3},
+    ], black_band=True)
+    page = _render(cur.output_paths()[0])[0].convert('RGB')
+    w, h = page.size
+    # 1) burbuja: fondo blanco dentro aunque debajo haya franja negra... la caja
+    #    está en y 0.5-0.6 (fuera de la franja) — comprobar interior blanco.
+    r, g, b = _pixel(page, 0.7, 0.55)
+    assert r > 230 and g > 230 and b > 230, f'esperaba burbuja blanca, vi {(r, g, b)}'
+    # 2) texto: píxeles rojos dentro de la burbuja
+    reddish = sum(1 for py in range(int(h * 0.41), int(h * 0.49))
+                  for px in range(int(w * 0.50), int(w * 0.80), 2)
+                  if (lambda c: c[0] > 120 and c[1] < 120)(page.getpixel((px, py))))
+    assert reddish > 10, f'esperaba texto rojo, conté {reddish}'
+    # 3) puntero: la línea del borde de la caja (0.5, y~0.5) al tip (0.2, 0.3)
+    #    pasa por el punto medio (0.35, 0.4)
+    r3, g3, b3 = _pixel(page, 0.35, 0.4)
+    assert r3 > 60 and g3 < 120, f'esperaba la linea del puntero, vi {(r3, g3, b3)}'
+
+
+def test_stamp_border_text_and_server_date(tmp_path):
+    cur, _ = _run(tmp_path, [
+        {'type': 'stamp', 'page': 1, 'x': 0.3, 'y': 0.7, 'w': 0.4, 'h': 0.1,
+         'text': 'pagado', 'show_datetime': True, 'stroke_width': 3},
+    ])
+    page = _render(cur.output_paths()[0])[0].convert('RGB')
+    w, h = page.size
+    # Borde superior del sello
+    r, g, b = _pixel(page, 0.5, 0.8)
+    assert r > 120 and g < 120, f'esperaba borde del sello, vi {(r, g, b)}'
+    # Texto (PAGADO en mayúsculas + fecha): muchos píxeles rojos dentro
+    reddish = sum(1 for py in range(int(h * 0.20), int(h * 0.30))
+                  for px in range(int(w * 0.30), int(w * 0.70), 2)
+                  if (lambda c: c[0] > 120 and c[1] < 120)(page.getpixel((px, py))))
+    assert reddish > 30, f'esperaba texto del sello, conté {reddish}'
+
+
+def test_freehand_without_points_draws_nothing_but_rest_applies(tmp_path):
+    cur, result = _run(tmp_path, [
+        {'type': 'freehand', 'page': 1, 'x': 0.1, 'y': 0.1, 'w': 0.3, 'h': 0.2, 'points': []},
+        {'type': 'rect', 'page': 1, 'x': 0.5, 'y': 0.5, 'w': 0.2, 'h': 0.1},
+    ])
+    # El freehand vacío no revienta el job; la página se estampa por el rect.
+    assert result == {'edits': 2}
+    out = pikepdf.open(cur.output_paths()[0])
+    assert _has_form_overlay(out.pages[0])
+
+
 def test_whiteout_covers_content(tmp_path):
     # Franja negra en la mitad inferior; tapamos un trozo y debe quedar blanco.
     cur, _ = _run(tmp_path, [

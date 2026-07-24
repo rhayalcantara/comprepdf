@@ -634,6 +634,44 @@ describe('editPdf controller', () => {
     expectValidationError(message);
   });
 
+  it('acepta los tipos de la Fase 2 con sus campos normalizados', async () => {
+    buildRequest({ file: [pdfFile()] }, {
+      edits: JSON.stringify([
+        { type: 'freehand', page: 1, x: 0.1, y: 0.1, w: 0.3, h: 0.2,
+          points: [[0, 0.123456], [0.5, 1], [1, 0]] },
+        { type: 'polygon', page: 1, x: 0.5, y: 0.1, w: 0.3, h: 0.2,
+          points: [[0, 0], [1, 0], [0.5, 1]] },
+        { type: 'cloud', page: 1, x: 0.1, y: 0.5, w: 0.3, h: 0.2 },
+        { type: 'callout', page: 1, x: 0.5, y: 0.5, w: 0.3, h: 0.1,
+          text: '  Revisar  ', tip: [0.31234567, 0.4] },
+        { type: 'stamp', page: 1, x: 0.3, y: 0.8, w: 0.3, h: 0.08,
+          text: 'Pagado', show_datetime: 'true' },
+      ]),
+    });
+    await run();
+
+    expect(mockNext).not.toHaveBeenCalled();
+    const edits = savedJob().operationParams.edits;
+    expect(edits).toHaveLength(5);
+    expect(edits[0].points[0]).toEqual([0, 0.1235]);  // redondeo a 4 decimales
+    expect(edits[3]).toEqual(expect.objectContaining({ text: 'Revisar', tip: [0.3123, 0.4] }));
+    expect(edits[4]).toEqual(expect.objectContaining({ text: 'Pagado', show_datetime: true }));
+  });
+
+  it.each([
+    ['freehand sin puntos', { type: 'freehand' }, 'needs at least 2 points'],
+    ['polígono con 2 puntos', { type: 'polygon', points: [[0, 0], [1, 1]] }, 'needs at least 3 points'],
+    ['punto fuera de rango', { type: 'freehand', points: [[0, 0], [2, 1]] }, 'must be numbers between 0 and 1'],
+    ['callout sin texto', { type: 'callout', tip: [0.5, 0.5] }, 'needs a non-empty text'],
+    ['callout sin tip', { type: 'callout', text: 'ojo' }, 'tip must be a [x, y] pair'],
+    ['stamp con texto muy largo', { type: 'stamp', text: 'X'.repeat(61) }, 'stamp text is too long'],
+  ])('rechaza %s con 400', async (_n, override, message) => {
+    const { text: _drop, ...base } = textEdit();
+    buildRequest({ file: [pdfFile()] }, { edits: JSON.stringify([{ ...base, ...override }]) });
+    await run();
+    expectValidationError(message);
+  });
+
   it('image_index fuera de rango responde 400', async () => {
     buildRequest({ file: [pdfFile()], images: [imageFile()] }, {
       edits: JSON.stringify([{ type: 'image', page: 1, x: 0.5, y: 0.5, w: 0.2, h: 0.1, image_index: 5 }]),
