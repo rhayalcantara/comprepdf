@@ -64,6 +64,15 @@
 .tool-grid.cols-2 { grid-template-columns: 1fr 1fr; }
 .tool-grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
 .tool-grid.cols-3 button { justify-content: center; }
+// Botones compactos: icono arriba y etiqueta debajo, sin desbordar el panel.
+.tool-grid.cols-2 button {
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 0.5rem 0.25rem;
+  font-size: 0.82rem;
+  min-width: 0;
+}
 .sw-highlight { background: #fff3b0 !important; color: #7a5c00 !important; }
 .sw-underline { text-decoration: underline; }
 .sw-strike { text-decoration: line-through; }
@@ -83,8 +92,22 @@
 .mono { font-variant-numeric: tabular-nums; font-size: 0.9rem; }
 
 .canvas-column { min-width: 0; }
+.zoom-bar {
+  display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+  margin-bottom: 0.6rem;
+  button {
+    width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 8px;
+    background: #fff; font-size: 1rem; cursor: pointer;
+    &:disabled { opacity: 0.4; cursor: not-allowed; }
+  }
+  .zoom-fit { width: auto; padding: 0 0.6rem; font-size: 0.82rem; }
+  .mono { min-width: 3.2rem; text-align: center; }
+}
+// Con zoom el marco crece más que la columna: se hace scroll aquí.
+.canvas-scroll { overflow: auto; max-height: calc(100vh - 170px); }
 .place-frame {
   position: relative;
+  margin: 0 auto;
   border: 1px solid var(--line);
   border-radius: 8px;
   overflow: hidden;

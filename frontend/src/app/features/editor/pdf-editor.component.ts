@@ -71,6 +71,10 @@ export class PdfEditorComponent implements OnDestroy {
   pageCount = 0;
   currentPage = 1;
   pageAspect = Math.SQRT2; // alto/ancho de la página mostrada
+  /** Nivel de zoom del documento (1 = ajustado al ancho de la columna). */
+  zoom = 1;
+  /** Ancho en px del marco de la página (ancho base de la columna × zoom). */
+  frameWidth: number | null = null;
 
   elements: EditorElement[] = [];
   selectedId = '';
@@ -179,14 +183,25 @@ export class PdfEditorComponent implements OnDestroy {
     const canvas = this.canvasRef?.nativeElement;
     if (!this.doc || !canvas) return;
     const seq = ++this.renderSeq;
-    const width = Math.min(this.frameRef?.nativeElement.clientWidth || 680, 900);
+    // Ancho base = la columna (no el marco: el marco crece con el zoom).
+    const column = this.frameRef?.nativeElement.parentElement;
+    const base = Math.min(column?.clientWidth || 680, 900);
+    const width = Math.round(base * this.zoom);
     try {
       await this.doc.render(this.currentPage, canvas, width);
       if (seq !== this.renderSeq) return;
+      this.frameWidth = width;
       if (canvas.width > 0) this.pageAspect = canvas.height / canvas.width;
     } catch {
       /* render cancelado o fallido: se reintenta al navegar */
     }
+  }
+
+  setZoom(zoom: number): void {
+    const next = clamp(Math.round(zoom * 100) / 100, 0.5, 3);
+    if (next === this.zoom) return;
+    this.zoom = next;
+    void this.renderPage();
   }
 
   // --- crear / borrar elementos ---

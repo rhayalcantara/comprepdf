@@ -89,7 +89,14 @@
 
     <!-- Centro: página con los elementos superpuestos -->
     <section class="canvas-column">
-      <div class="place-frame" #frame>
+      <div class="zoom-bar">
+        <button type="button" title="Alejar" (click)="setZoom(zoom - 0.25)" [disabled]="zoom <= 0.5">−</button>
+        <span class="mono">{{ (zoom * 100).toFixed(0) }}%</span>
+        <button type="button" title="Acercar" (click)="setZoom(zoom + 0.25)" [disabled]="zoom >= 3">+</button>
+        <button type="button" class="zoom-fit" title="Ajustar al ancho" (click)="setZoom(1)" [disabled]="zoom === 1">Ajustar</button>
+      </div>
+      <div class="canvas-scroll">
+        <div class="place-frame" #frame [style.width.px]="frameWidth">
         <canvas #pageCanvas></canvas>
         @for (el of elementsOnPage; track el.id) {
           <div class="el-box"
@@ -188,6 +195,7 @@
                   (pointercancel)="endDrag()"></span>
           </div>
         }
+        </div>
       </div>
     </section>
 
