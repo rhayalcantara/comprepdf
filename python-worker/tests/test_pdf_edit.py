@@ -230,6 +230,123 @@ def _pixel(img, xf, yf):
     return img.convert('RGB').getpixel((px, py))
 
 
+# --- Fase 1: marcado, formas y marcas rápidas ---
+
+SHAPE_TYPES = ('highlight', 'underline', 'strikeout', 'line', 'arrow', 'rect', 'ellipse', 'mark')
+
+
+def test_all_shape_types_add_overlay(tmp_path):
+    """Los 8 tipos nuevos dibujan algo: cada uno cuenta como edición aplicada."""
+    edits = [{'type': t, 'page': 1, 'x': 0.1, 'y': 0.1, 'w': 0.3, 'h': 0.1}
+             for t in SHAPE_TYPES]
+    cur, result = _run(tmp_path, edits)
+    assert result == {'edits': len(SHAPE_TYPES)}
+    out = pikepdf.open(cur.output_paths()[0])
+    assert _has_form_overlay(out.pages[0])
+
+
+def test_highlight_is_translucent(tmp_path):
+    """Sobre la franja negra el resaltado se nota (no queda negro puro) pero NO
+    tapa como el whiteout (no queda blanco): eso solo pasa si hay alpha real."""
+    cur, _ = _run(tmp_path, [
+        {'type': 'highlight', 'page': 1, 'x': 0.3, 'y': 0.2, 'w': 0.4, 'h': 0.1},
+    ], black_band=True)
+    page = _render(cur.output_paths()[0])[0]
+    r, g, b = _pixel(page, 0.5, 0.25)
+    assert r > 40, f'el resaltado no se dibujó sobre el negro: {(r, g, b)}'
+    assert b < 80, f'el resaltado tapó en vez de transparentar: {(r, g, b)}'
+    # Fuera del recuadro la franja sigue negra
+    r2, g2, b2 = _pixel(page, 0.1, 0.25)
+    assert r2 < 40 and g2 < 40 and b2 < 40
+
+
+def test_strikeout_crosses_mid_height(tmp_path):
+    cur, _ = _run(tmp_path, [
+        {'type': 'strikeout', 'page': 1, 'x': 0.2, 'y': 0.4, 'w': 0.4, 'h': 0.1,
+         'stroke_width': 4},
+    ])
+    page = _render(cur.output_paths()[0])[0]
+    r, g, b = _pixel(page, 0.4, 0.45)  # media altura de la caja
+    assert r > 120 and g < 120, f'esperaba trazo rojo, vi {(r, g, b)}'
+    r2, g2, b2 = _pixel(page, 0.4, 0.48)  # dentro de la caja pero fuera del trazo
+    assert r2 > 240 and g2 > 240 and b2 > 240
+
+
+def test_underline_at_bottom_edge(tmp_path):
+    cur, _ = _run(tmp_path, [
+        {'type': 'underline', 'page': 1, 'x': 0.2, 'y': 0.4, 'w': 0.4, 'h': 0.1,
+         'stroke_width': 4},
+    ])
+    page = _render(cur.output_paths()[0])[0]
+    r, g, b = _pixel(page, 0.4, 0.4)  # borde inferior
+    assert r > 120 and g < 120, f'esperaba subrayado rojo, vi {(r, g, b)}'
+
+
+def test_rect_is_border_not_fill(tmp_path):
+    cur, _ = _run(tmp_path, [
+        {'type': 'rect', 'page': 1, 'x': 0.2, 'y': 0.4, 'w': 0.4, 'h': 0.2,
+         'stroke_width': 4},
+    ])
+    page = _render(cur.output_paths()[0])[0]
+    r, g, b = _pixel(page, 0.2, 0.5)  # borde izquierdo
+    assert r > 120 and g < 120, f'esperaba borde rojo, vi {(r, g, b)}'
+    r2, g2, b2 = _pixel(page, 0.4, 0.5)  # centro: sin relleno
+    assert r2 > 240 and g2 > 240 and b2 > 240
+
+
+def test_line_direction_down(tmp_path):
+    """dir='down' traza de arriba-izquierda a abajo-derecha; la otra diagonal
+    queda limpia."""
+    cur, _ = _run(tmp_path, [
+        {'type': 'line', 'page': 1, 'x': 0.2, 'y': 0.2, 'w': 0.4, 'h': 0.4,
+         'dir': 'down', 'stroke_width': 4},
+    ])
+    page = _render(cur.output_paths()[0])[0]
+    r, g, b = _pixel(page, 0.22, 0.58)  # cerca del arranque de la diagonal down
+    assert r > 120 and g < 120, f'esperaba la diagonal down, vi {(r, g, b)}'
+    r2, g2, b2 = _pixel(page, 0.22, 0.22)  # arranque de la diagonal up: limpio
+    assert r2 > 240 and g2 > 240 and b2 > 240
+
+
+def test_arrow_passes_through_center(tmp_path):
+    cur, _ = _run(tmp_path, [
+        {'type': 'arrow', 'page': 1, 'x': 0.2, 'y': 0.2, 'w': 0.4, 'h': 0.4,
+         'stroke_width': 4},
+    ])
+    page = _render(cur.output_paths()[0])[0]
+    r, g, b = _pixel(page, 0.4, 0.4)  # centro de la caja: sobre la diagonal up
+    assert r > 120 and g < 120, f'esperaba la flecha, vi {(r, g, b)}'
+
+
+def test_mark_cross_draws_strokes(tmp_path):
+    cur, _ = _run(tmp_path, [
+        {'type': 'mark', 'mark': 'cross', 'page': 1, 'x': 0.4, 'y': 0.4,
+         'w': 0.1, 'h': 0.1, 'stroke_width': 4},
+    ])
+    page = _render(cur.output_paths()[0])[0].convert('RGB')
+    w, h = page.size
+    reddish = 0
+    for py in range(int(h * 0.50), int(h * 0.60)):
+        for px in range(int(w * 0.40), int(w * 0.50), 2):
+            r, g, b = page.getpixel((px, py))
+            if r > 120 and g < 120:
+                reddish += 1
+    assert reddish > 10, f'esperaba trazos de la cruz, conté {reddish}'
+
+
+def test_alpha_does_not_leak_to_next_edit(tmp_path):
+    """Un highlight seguido de un rect: el trazo del rect debe salir opaco
+    (el alpha del resaltado se restaura con saveState/restoreState)."""
+    cur, _ = _run(tmp_path, [
+        {'type': 'highlight', 'page': 1, 'x': 0.1, 'y': 0.7, 'w': 0.2, 'h': 0.05},
+        {'type': 'rect', 'page': 1, 'x': 0.2, 'y': 0.4, 'w': 0.4, 'h': 0.2,
+         'stroke_width': 4, 'color': '#000000'},
+    ])
+    page = _render(cur.output_paths()[0])[0]
+    r, g, b = _pixel(page, 0.2, 0.5)  # borde del rect: negro OPACO
+    assert r < 60 and g < 60 and b < 60, f'el trazo salió translúcido: {(r, g, b)}'
+
+
 def test_whiteout_covers_content(tmp_path):
     # Franja negra en la mitad inferior; tapamos un trozo y debe quedar blanco.
     cur, _ = _run(tmp_path, [

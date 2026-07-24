@@ -603,6 +603,37 @@ describe('editPdf controller', () => {
     expect(fs.unlink).toHaveBeenCalledWith(pdf.path);
   });
 
+  it('acepta las formas de la Fase 1 con sus campos normalizados', async () => {
+    buildRequest({ file: [pdfFile()] }, {
+      edits: JSON.stringify([
+        { type: 'highlight', page: 1, x: 0.1, y: 0.5, w: 0.4, h: 0.05 },
+        { type: 'arrow', page: 1, x: 0.2, y: 0.2, w: 0.3, h: 0.3, dir: 'down', stroke_width: 3 },
+        { type: 'mark', page: 1, x: 0.5, y: 0.5, w: 0.05, h: 0.05, mark: 'cross', color: '#B42318' },
+        { type: 'line', page: 1, x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+      ]),
+    });
+    await run();
+
+    expect(mockNext).not.toHaveBeenCalled();
+    const edits = savedJob().operationParams.edits;
+    expect(edits).toHaveLength(4);
+    expect(edits[1]).toEqual(expect.objectContaining({ dir: 'down', stroke_width: 3 }));
+    expect(edits[2]).toEqual(expect.objectContaining({ mark: 'cross', color: '#B42318' }));
+    expect(edits[3].dir).toBe('up');  // por defecto
+  });
+
+  it.each([
+    ['stroke_width fuera de rango', { type: 'rect', stroke_width: 50 }, 'stroke_width must be between'],
+    ['dir inválida en línea', { type: 'line', dir: 'diagonal' }, "dir must be 'up' or 'down'"],
+    ['mark desconocida', { type: 'mark', mark: 'estrella' }, 'mark must be one of'],
+    ['color no hex en forma', { type: 'highlight', color: 'amarillo' }, 'color must be a hex'],
+  ])('rechaza %s con 400', async (_n, override, message) => {
+    const { text: _drop, ...shape } = { ...textEdit(), ...override };
+    buildRequest({ file: [pdfFile()] }, { edits: JSON.stringify([shape]) });
+    await run();
+    expectValidationError(message);
+  });
+
   it('image_index fuera de rango responde 400', async () => {
     buildRequest({ file: [pdfFile()], images: [imageFile()] }, {
       edits: JSON.stringify([{ type: 'image', page: 1, x: 0.5, y: 0.5, w: 0.2, h: 0.1, image_index: 5 }]),

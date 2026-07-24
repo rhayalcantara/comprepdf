@@ -7,7 +7,24 @@ import { Subscription, finalize, interval, switchMap, takeWhile } from 'rxjs';
 import { ApiService, PdfEdit } from '../../core/services/api.service';
 import { PdfDocHandle, PdfPreviewService } from '../../shared/pdf-preview/pdf-preview.service';
 
-type ElementType = 'text' | 'image' | 'whiteout';
+type ShapeType = 'highlight' | 'underline' | 'strikeout' | 'line' | 'arrow' | 'rect' | 'ellipse' | 'mark';
+type ElementType = 'text' | 'image' | 'whiteout' | ShapeType;
+type MarkKind = 'cross' | 'check' | 'dot';
+
+/** Formas de la Fase 1 de marcado: se envían con color/grosor de trazo. */
+const SHAPE_TYPES: readonly ShapeType[] = [
+  'highlight', 'underline', 'strikeout', 'line', 'arrow', 'rect', 'ellipse', 'mark',
+];
+
+const HIGHLIGHT_COLOR = '#FFDE21';
+const STROKE_COLOR = '#B42318';
+const CHECK_COLOR = '#027A48';
+
+const TYPE_LABELS: Record<ElementType, string> = {
+  text: 'Texto', image: 'Imagen', whiteout: 'Tapar y escribir',
+  highlight: 'Resaltado', underline: 'Subrayado', strikeout: 'Tachado',
+  line: 'Línea', arrow: 'Flecha', rect: 'Recuadro', ellipse: 'Círculo', mark: 'Marca',
+};
 
 /** Un elemento colocado sobre el PDF. Fracciones con origen ARRIBA-izquierda
  *  (como en pantalla); se convierten a la convención PDF al enviar. */
@@ -23,6 +40,12 @@ interface EditorElement {
   fontSize: number;
   color: string;
   textColor: string;
+  /** Grosor del trazo en puntos (solo formas). */
+  strokeWidth: number;
+  /** Diagonal que traza line/arrow. */
+  dir: 'up' | 'down';
+  /** Subtipo de la marca rápida. */
+  mark: MarkKind;
   imageUrl?: string;
   imageFile?: File;
   imageAspect?: number;
@@ -176,6 +199,55 @@ export class PdfEditorComponent implements OnDestroy {
     this.add({ type: 'whiteout', text: '', width: 0.25, height: 0.03 });
   }
 
+  // --- Fase 1: marcado, formas y marcas rápidas ---
+
+  isShape(el: EditorElement): boolean {
+    return (SHAPE_TYPES as readonly string[]).includes(el.type);
+  }
+
+  typeLabel(el: EditorElement): string {
+    return TYPE_LABELS[el.type] ?? el.type;
+  }
+
+  addHighlight(): void {
+    this.add({ type: 'highlight', width: 0.3, height: 0.04, color: HIGHLIGHT_COLOR });
+  }
+
+  addUnderline(): void {
+    this.add({ type: 'underline', width: 0.3, height: 0.02, color: STROKE_COLOR });
+  }
+
+  addStrikeout(): void {
+    this.add({ type: 'strikeout', width: 0.3, height: 0.03, color: STROKE_COLOR });
+  }
+
+  addLine(): void {
+    this.add({ type: 'line', width: 0.25, height: 0.12, color: STROKE_COLOR });
+  }
+
+  addArrow(): void {
+    this.add({ type: 'arrow', width: 0.25, height: 0.12, color: STROKE_COLOR });
+  }
+
+  addRect(): void {
+    this.add({ type: 'rect', width: 0.3, height: 0.12, color: STROKE_COLOR });
+  }
+
+  addEllipse(): void {
+    this.add({ type: 'ellipse', width: 0.22, height: 0.08, color: STROKE_COLOR });
+  }
+
+  addMark(kind: MarkKind): void {
+    // Caja visualmente cuadrada: la fracción de alto se compensa con el aspecto.
+    const width = 0.05;
+    this.add({
+      type: 'mark', mark: kind, width,
+      height: clamp(width / this.pageAspect, 0.02, 0.5),
+      color: kind === 'check' ? CHECK_COLOR : STROKE_COLOR,
+      strokeWidth: 3,
+    });
+  }
+
   async onImage(event: Event): Promise<void> {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
@@ -209,6 +281,9 @@ export class PdfEditorComponent implements OnDestroy {
       fontSize: 12,
       color: partial.type === 'text' ? '#101828' : '#FFFFFF',
       textColor: '#101828',
+      strokeWidth: 2,
+      dir: 'up',
+      mark: 'check',
       ...partial,
     };
     this.elements.push(el);
@@ -289,6 +364,15 @@ export class PdfEditorComponent implements OnDestroy {
       if (el.type === 'whiteout') {
         return { ...base, type: 'whiteout', text: el.text, font_size: el.fontSize,
                  color: el.color, color_text: el.textColor };
+      }
+      if (this.isShape(el)) {
+        const shape: PdfEdit = {
+          ...base, type: el.type as PdfEdit['type'],
+          color: el.color, stroke_width: el.strokeWidth,
+        };
+        if (el.type === 'line' || el.type === 'arrow') shape.dir = el.dir;
+        if (el.type === 'mark') shape.mark = el.mark;
+        return shape;
       }
       return { ...base, type: 'text', text: el.text, font_size: el.fontSize, color: el.color };
     });

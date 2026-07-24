@@ -61,6 +61,14 @@
 .panel-hint { font-size: 0.78rem; color: var(--ink-soft); margin: 0.5rem 0 0; }
 
 .tool-grid { display: grid; gap: 0.5rem; }
+.tool-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+.tool-grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+.tool-grid.cols-3 button { justify-content: center; }
+.sw-highlight { background: #fff3b0 !important; color: #7a5c00 !important; }
+.sw-underline { text-decoration: underline; }
+.sw-strike { text-decoration: line-through; }
+.mk-check { color: #027a48 !important; background: #e4f4ea !important; }
+.mk-cross { color: #b42318 !important; background: #fdecec !important; }
 .tool-grid button, .tool-file {
   display: flex; align-items: center; gap: 0.5rem;
   border: 1px solid var(--line); border-radius: 8px; padding: 0.5rem 0.7rem;
@@ -100,6 +108,8 @@ canvas { display: block; width: 100%; height: auto; }
   img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
 }
 .el-text { padding: 1px 2px; line-height: 1.15; white-space: pre-wrap; pointer-events: none; overflow: hidden; }
+.el-fill { position: absolute; inset: 0; opacity: 0.35; pointer-events: none; }
+.el-shape { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
 
 .el-handle {
   position: absolute; right: -7px; bottom: -7px; width: 14px; height: 14px;
@@ -113,9 +123,10 @@ canvas { display: block; width: 100%; height: auto; }
 
 .field { display: grid; gap: 0.3rem; margin-bottom: 0.75rem; }
 .field span { font-size: 0.8rem; color: var(--ink-soft); }
-.field input, .field textarea {
+.field input, .field textarea, .field select {
   border: 1px solid var(--line); border-radius: 8px; padding: 0.45rem 0.55rem; font: inherit; width: 100%;
 }
+.field input[type="range"] { border: none; padding: 0; }
 .field input[type="color"] { height: 38px; padding: 2px; }
 
 .empty-props { display: grid; gap: 0.3rem; color: var(--ink-soft); font-size: 0.85rem; }

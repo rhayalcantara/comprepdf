@@ -47,7 +47,8 @@ export interface OrganizedPage {
 
 /** Una edición a estampar sobre el PDF (convención de coordenadas de la firma). */
 export interface PdfEdit {
-  type: 'text' | 'image' | 'whiteout';
+  type: 'text' | 'image' | 'whiteout'
+    | 'highlight' | 'underline' | 'strikeout' | 'line' | 'arrow' | 'rect' | 'ellipse' | 'mark';
   page: number;
   x: number;
   y: number;
@@ -59,6 +60,12 @@ export interface PdfEdit {
   color_text?: string;
   /** Índice dentro del array de imágenes subidas (solo type 'image'). */
   image_index?: number;
+  /** Grosor del trazo en puntos (formas y marcado; 0.5–12). */
+  stroke_width?: number;
+  /** Diagonal de la caja que traza line/arrow ('up' por defecto). */
+  dir?: 'up' | 'down';
+  /** Subtipo de la marca rápida (solo type 'mark'). */
+  mark?: 'cross' | 'check' | 'dot';
 }
 
 /** Conteo agnóstico por operación (bloque `byOperation` del overview). */

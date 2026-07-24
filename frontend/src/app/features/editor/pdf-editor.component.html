@@ -47,6 +47,31 @@
       </div>
 
       <div class="section-divider"></div>
+      <p class="section-label">Marcado</p>
+      <div class="tool-grid">
+        <button type="button" (click)="addHighlight()"><span class="sw-highlight">A</span> Resaltar</button>
+        <button type="button" (click)="addUnderline()"><span class="sw-underline">A</span> Subrayar</button>
+        <button type="button" (click)="addStrikeout()"><span class="sw-strike">A</span> Tachar</button>
+      </div>
+
+      <div class="section-divider"></div>
+      <p class="section-label">Formas</p>
+      <div class="tool-grid cols-2">
+        <button type="button" (click)="addLine()"><span>╱</span> Línea</button>
+        <button type="button" (click)="addArrow()"><span>↗</span> Flecha</button>
+        <button type="button" (click)="addRect()"><span>▭</span> Recuadro</button>
+        <button type="button" (click)="addEllipse()"><span>◯</span> Círculo</button>
+      </div>
+
+      <div class="section-divider"></div>
+      <p class="section-label">Marcas rápidas</p>
+      <div class="tool-grid cols-3">
+        <button type="button" title="Marca de verificación" (click)="addMark('check')"><span class="mk-check">✓</span></button>
+        <button type="button" title="Marca de cruz" (click)="addMark('cross')"><span class="mk-cross">✗</span></button>
+        <button type="button" title="Punto" (click)="addMark('dot')"><span>●</span></button>
+      </div>
+
+      <div class="section-divider"></div>
       <p class="section-label">Página</p>
       <div class="page-nav">
         <button type="button" (click)="goToPage(currentPage - 1)" [disabled]="currentPage <= 1">‹</button>
@@ -83,6 +108,74 @@
               @case ('image') {
                 <img [src]="el.imageUrl" alt="" draggable="false" />
               }
+              @case ('highlight') {
+                <span class="el-fill" [style.background]="el.color"></span>
+              }
+              @case ('underline') {
+                <svg class="el-shape" viewBox="0 0 100 100" preserveAspectRatio="none">
+                  <line x1="0" y1="100" x2="100" y2="100" vector-effect="non-scaling-stroke"
+                        [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
+                </svg>
+              }
+              @case ('strikeout') {
+                <svg class="el-shape" viewBox="0 0 100 100" preserveAspectRatio="none">
+                  <line x1="0" y1="50" x2="100" y2="50" vector-effect="non-scaling-stroke"
+                        [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
+                </svg>
+              }
+              @case ('line') {
+                <svg class="el-shape" viewBox="0 0 100 100" preserveAspectRatio="none">
+                  <line x1="0" [attr.y1]="el.dir === 'down' ? 0 : 100" x2="100"
+                        [attr.y2]="el.dir === 'down' ? 100 : 0" vector-effect="non-scaling-stroke"
+                        [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
+                </svg>
+              }
+              @case ('arrow') {
+                <svg class="el-shape" viewBox="0 0 100 100" preserveAspectRatio="none">
+                  <line x1="0" [attr.y1]="el.dir === 'down' ? 0 : 100" x2="100"
+                        [attr.y2]="el.dir === 'down' ? 100 : 0" vector-effect="non-scaling-stroke"
+                        [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
+                  <line x1="100" [attr.y1]="el.dir === 'down' ? 100 : 0" x2="80"
+                        [attr.y2]="el.dir === 'down' ? 94 : 6" vector-effect="non-scaling-stroke"
+                        [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
+                  <line x1="100" [attr.y1]="el.dir === 'down' ? 100 : 0" x2="94"
+                        [attr.y2]="el.dir === 'down' ? 76 : 24" vector-effect="non-scaling-stroke"
+                        [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
+                </svg>
+              }
+              @case ('rect') {
+                <svg class="el-shape" viewBox="0 0 100 100" preserveAspectRatio="none">
+                  <rect x="0" y="0" width="100" height="100" fill="none" vector-effect="non-scaling-stroke"
+                        [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
+                </svg>
+              }
+              @case ('ellipse') {
+                <svg class="el-shape" viewBox="0 0 100 100" preserveAspectRatio="none">
+                  <ellipse cx="50" cy="50" rx="50" ry="50" fill="none" vector-effect="non-scaling-stroke"
+                           [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
+                </svg>
+              }
+              @case ('mark') {
+                <!-- Sin preserveAspectRatio none: el glifo queda cuadrado y centrado,
+                     igual que lo dibuja el worker con min(w,h). -->
+                <svg class="el-shape" viewBox="0 0 100 100">
+                  @switch (el.mark) {
+                    @case ('cross') {
+                      <line x1="10" y1="10" x2="90" y2="90" vector-effect="non-scaling-stroke"
+                            [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
+                      <line x1="10" y1="90" x2="90" y2="10" vector-effect="non-scaling-stroke"
+                            [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
+                    }
+                    @case ('dot') {
+                      <circle cx="50" cy="50" r="45" [attr.fill]="el.color" />
+                    }
+                    @default {
+                      <polyline points="10,50 38,85 90,15" fill="none" vector-effect="non-scaling-stroke"
+                                [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
+                    }
+                  }
+                </svg>
+              }
               @default {
                 <span class="el-text" [style.color]="el.type === 'whiteout' ? el.textColor : el.color"
                       [style.font-size.px]="el.fontSize">{{ el.text }}</span>
@@ -102,11 +195,43 @@
     <aside class="panel props-panel">
       @if (selected; as el) {
         <div class="panel-heading props-heading">
-          <div><p class="eyebrow">Elemento</p><h2>{{ el.type === 'text' ? 'Texto' : el.type === 'image' ? 'Imagen' : 'Tapar y escribir' }}</h2></div>
+          <div><p class="eyebrow">Elemento</p><h2>{{ typeLabel(el) }}</h2></div>
           <button class="icon-button danger" type="button" title="Eliminar" (click)="remove(el)">×</button>
         </div>
 
-        @if (el.type !== 'image') {
+        @if (isShape(el)) {
+          <label class="field">
+            <span>Color</span>
+            <input type="color" [(ngModel)]="el.color" />
+          </label>
+          @if (el.type !== 'highlight') {
+            <label class="field">
+              <span>Grosor del trazo ({{ el.strokeWidth }} pt)</span>
+              <input type="range" min="0.5" max="12" step="0.5"
+                     [ngModel]="el.strokeWidth" (ngModelChange)="el.strokeWidth = +$event" />
+            </label>
+          }
+          @if (el.type === 'line' || el.type === 'arrow') {
+            <label class="field">
+              <span>Dirección</span>
+              <select [(ngModel)]="el.dir">
+                <option value="up">↗ Ascendente</option>
+                <option value="down">↘ Descendente</option>
+              </select>
+            </label>
+          }
+          @if (el.type === 'mark') {
+            <label class="field">
+              <span>Tipo de marca</span>
+              <select [(ngModel)]="el.mark">
+                <option value="check">✓ Verificación</option>
+                <option value="cross">✗ Cruz</option>
+                <option value="dot">● Punto</option>
+              </select>
+            </label>
+          }
+          <p class="panel-hint">Arrastra el recuadro para mover y la esquina para cambiar el tamaño.</p>
+        } @else if (el.type !== 'image') {
           <label class="field">
             <span>{{ el.type === 'whiteout' ? 'Texto encima (opcional)' : 'Texto' }}</span>
             <textarea rows="3" [(ngModel)]="el.text"></textarea>

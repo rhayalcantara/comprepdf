@@ -560,7 +560,18 @@ function parseStamp(raw: unknown): Record<string, unknown> | undefined {
  * se añadirá en la Fase B; hasta entonces se rechaza para no degradar en
  * silencio un "borrar" a un "tapar".
  */
-const EDIT_TYPES = ['text', 'image', 'whiteout'] as const;
+const EDIT_TYPES = [
+  'text', 'image', 'whiteout',
+  // Fase 1 de marcado (tipo Acrobat): formas vectoriales sobre la caja x,y,w,h.
+  'highlight', 'underline', 'strikeout', 'line', 'arrow', 'rect', 'ellipse', 'mark',
+] as const;
+
+/** Tipos con trazo: aceptan stroke_width; line/arrow además aceptan dir. */
+const STROKE_TYPES = ['highlight', 'underline', 'strikeout', 'line', 'arrow', 'rect', 'ellipse', 'mark'] as const;
+const LINE_DIRS = ['up', 'down'] as const;
+const MARK_KINDS = ['cross', 'check', 'dot'] as const;
+const MIN_STROKE_WIDTH = 0.5;
+const MAX_STROKE_WIDTH = 12;
 const MAX_ORGANIZE_PAGES = 5000;
 
 /**
@@ -663,6 +674,38 @@ function validateEdit(raw: unknown, index: number, images: Express.Multer.File[]
       throw new ValidationError(`Edit ${index + 1} references a missing image`);
     }
     out.image_path = path.resolve(images[imageIndex].path);
+  }
+
+  if ((STROKE_TYPES as readonly string[]).includes(type)) {
+    if (e.color !== undefined) {
+      if (!HEX_COLOR.test(String(e.color))) {
+        throw new ValidationError(`Edit ${index + 1} color must be a hex like #B42318`);
+      }
+      out.color = String(e.color);
+    }
+    if (e.stroke_width !== undefined) {
+      const strokeWidth = Number(e.stroke_width);
+      if (!Number.isFinite(strokeWidth) || strokeWidth < MIN_STROKE_WIDTH || strokeWidth > MAX_STROKE_WIDTH) {
+        throw new ValidationError(
+          `Edit ${index + 1} stroke_width must be between ${MIN_STROKE_WIDTH} and ${MAX_STROKE_WIDTH}`,
+        );
+      }
+      out.stroke_width = strokeWidth;
+    }
+    if (type === 'line' || type === 'arrow') {
+      const dir = e.dir === undefined ? 'up' : String(e.dir);
+      if (!(LINE_DIRS as readonly string[]).includes(dir)) {
+        throw new ValidationError(`Edit ${index + 1} dir must be 'up' or 'down'`);
+      }
+      out.dir = dir;
+    }
+    if (type === 'mark') {
+      const mark = e.mark === undefined ? 'check' : String(e.mark);
+      if (!(MARK_KINDS as readonly string[]).includes(mark)) {
+        throw new ValidationError(`Edit ${index + 1} mark must be one of: ${MARK_KINDS.join(', ')}`);
+      }
+      out.mark = mark;
+    }
   }
 
   return out;

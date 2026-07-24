@@ -4,8 +4,10 @@ A diferencia de las operaciones de una sola acción (sign, rotate...), aquí
 `operation_params.edits` es una LISTA de ediciones de varios tipos, colocadas por
 coordenadas normalizadas (0-1, origen abajo-izquierda, convención de la firma).
 
-Fase A (este archivo): `text`, `image`, `whiteout`. El borrado real del texto
-existente (`redact`, con PyMuPDF) se añade en la Fase B.
+Fase A: `text`, `image`, `whiteout`. Fase 1 de marcado (tipo Acrobat):
+`highlight`, `underline`, `strikeout`, `line`, `arrow`, `rect`, `ellipse` y
+`mark` (cross/check/dot). El borrado real del texto existente (`redact`, con
+PyMuPDF) sigue pendiente para la Fase B.
 
 Cada página con ediciones se pinta una sola vez: se dibuja un overlay de reportlab
 del tamaño exacto de esa página y se fusiona con `pikepdf.Page.add_overlay`. Se usa
@@ -14,6 +16,7 @@ el dibujo de texto/imágenes/rectángulos.
 """
 import io
 import json
+import math
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -40,6 +43,15 @@ DEFAULT_FILL_COLOR = '#FFFFFF'
 LINE_LEADING = 1.2
 # Tope de píxeles al decodificar (defensa anti-bomba; el backend ya acota bytes).
 MAX_IMAGE_PX = 6000
+
+# --- Marcado y formas (Fase 1 de las herramientas tipo Acrobat) ---
+# Tipos que se dibujan como trazos/rellenos vectoriales sobre la caja x,y,w,h.
+SHAPE_TYPES = ('highlight', 'underline', 'strikeout', 'line', 'arrow', 'rect', 'ellipse', 'mark')
+HIGHLIGHT_COLOR = '#FFDE21'
+HIGHLIGHT_ALPHA = 0.35
+DEFAULT_STROKE_COLOR = '#B42318'
+DEFAULT_STROKE_WIDTH = 2.0
+MIN_STROKE_WIDTH, MAX_STROKE_WIDTH = 0.5, 12.0
 
 
 def _hex_color(value: Any, default: str) -> colors.Color:
@@ -170,7 +182,91 @@ def _draw_edit(pdf_canvas: canvas.Canvas, edit: Dict[str, Any], pw: float, ph: f
                    _hex_color(edit.get('color'), DEFAULT_TEXT_COLOR))
         return True
 
+    if etype in SHAPE_TYPES:
+        _draw_shape(pdf_canvas, etype, edit, x, y, w, h)
+        return True
+
     return False
+
+
+def _stroke_width(edit: Dict[str, Any]) -> float:
+    try:
+        width = float(edit.get('stroke_width', DEFAULT_STROKE_WIDTH))
+    except (TypeError, ValueError):
+        return DEFAULT_STROKE_WIDTH
+    return max(MIN_STROKE_WIDTH, min(width, MAX_STROKE_WIDTH))
+
+
+def _draw_shape(pdf_canvas: canvas.Canvas, etype: str, edit: Dict[str, Any],
+                x: float, y: float, w: float, h: float) -> None:
+    """Dibuja un tipo de marcado/forma dentro de la caja (x,y,w,h).
+
+    saveState/restoreState por edición: el alpha del resaltado y el grosor de
+    trazo no deben contaminar las ediciones siguientes del mismo overlay.
+    """
+    color = _hex_color(edit.get('color'),
+                       HIGHLIGHT_COLOR if etype == 'highlight' else DEFAULT_STROKE_COLOR)
+    width = _stroke_width(edit)
+    pdf_canvas.saveState()
+    try:
+        if etype == 'highlight':
+            pdf_canvas.setFillColor(color)
+            pdf_canvas.setFillAlpha(HIGHLIGHT_ALPHA)
+            pdf_canvas.rect(x, y, w, h, fill=1, stroke=0)
+            return
+        pdf_canvas.setStrokeColor(color)
+        pdf_canvas.setLineWidth(width)
+        pdf_canvas.setLineCap(1)  # extremos redondeados
+        if etype == 'underline':
+            pdf_canvas.line(x, y, x + w, y)
+        elif etype == 'strikeout':
+            pdf_canvas.line(x, y + h / 2, x + w, y + h / 2)
+        elif etype in ('line', 'arrow'):
+            _draw_segment(pdf_canvas, etype, edit, x, y, w, h, width)
+        elif etype == 'rect':
+            pdf_canvas.rect(x, y, w, h, fill=0, stroke=1)
+        elif etype == 'ellipse':
+            pdf_canvas.ellipse(x, y, x + w, y + h, fill=0, stroke=1)
+        elif etype == 'mark':
+            _draw_mark(pdf_canvas, edit, x, y, w, h, color)
+    finally:
+        pdf_canvas.restoreState()
+
+
+def _draw_segment(pdf_canvas: canvas.Canvas, etype: str, edit: Dict[str, Any],
+                  x: float, y: float, w: float, h: float, width: float) -> None:
+    """Línea/flecha como diagonal de la caja; `dir` elige cuál ('up' por defecto:
+    de abajo-izquierda a arriba-derecha). La flecha lleva la punta en el destino."""
+    if str(edit.get('dir', 'up')) == 'down':
+        x1, y1, x2, y2 = x, y + h, x + w, y
+    else:
+        x1, y1, x2, y2 = x, y, x + w, y + h
+    pdf_canvas.line(x1, y1, x2, y2)
+    if etype == 'arrow':
+        angle = math.atan2(y2 - y1, x2 - x1)
+        head = max(8.0, width * 4.0)
+        for delta in (math.radians(150), math.radians(-150)):
+            pdf_canvas.line(x2, y2,
+                            x2 + head * math.cos(angle + delta),
+                            y2 + head * math.sin(angle + delta))
+
+
+def _draw_mark(pdf_canvas: canvas.Canvas, edit: Dict[str, Any],
+               x: float, y: float, w: float, h: float, color: colors.Color) -> None:
+    """Marca rápida (cross/check/dot) como glifo cuadrado centrado en la caja."""
+    kind = str(edit.get('mark', 'check'))
+    s = min(w, h)
+    x0 = x + (w - s) / 2
+    y0 = y + (h - s) / 2
+    if kind == 'dot':
+        pdf_canvas.setFillColor(color)
+        pdf_canvas.ellipse(x0, y0, x0 + s, y0 + s, fill=1, stroke=0)
+    elif kind == 'cross':
+        pdf_canvas.line(x0, y0, x0 + s, y0 + s)
+        pdf_canvas.line(x0, y0 + s, x0 + s, y0)
+    else:  # check
+        pdf_canvas.line(x0 + s * 0.10, y0 + s * 0.50, x0 + s * 0.38, y0 + s * 0.15)
+        pdf_canvas.line(x0 + s * 0.38, y0 + s * 0.15, x0 + s * 0.90, y0 + s * 0.85)
 
 
 def _font_size(edit: Dict[str, Any]) -> float:
