@@ -56,3 +56,6 @@ frontend/node_modules/
 
 # Playwright MCP scratch (descargas, screenshots, snapshots)
 .playwright-mcp/
+
+# Dump de datos de QA para la migración (contiene hashes y la CA): NUNCA versionar
+Docs/migracion-qa/
