@@ -107,6 +107,7 @@ export interface CreateUserInput {
 }
 
 export interface UpdateUserInput {
+  username?: string;
   nombre?: string;
   email?: string | null;
   passwordHash?: string;
@@ -151,6 +152,11 @@ export class UserModel {
 
   static findById(id: string): Promise<User | null> {
     return this.repo().findOne({ where: { id } });
+  }
+
+  /** Cuántos administradores ACTIVOS hay (lo consulta el seed inicial). */
+  static countActiveAdmins(): Promise<number> {
+    return this.repo().count({ where: { rol: 'admin', estado: 'activo' } });
   }
 
   /**
@@ -220,6 +226,9 @@ export class UserModel {
  * Siembra el primer usuario administrador en el arranque.
  *
  * - Si ya existe un usuario `admin`, no hace nada (idempotente).
+ * - Tampoco siembra si ya hay CUALQUIER administrador activo: el username es
+ *   editable, así que al admin sembrado se le puede haber renombrado y buscar
+ *   'admin' a secas resucitaría un segundo admin con la contraseña del .env.
  * - Si `ADMIN_INITIAL_PASSWORD` no está definida, NO crea nada y avisa por log.
  * - Crea `admin` con rol 'admin', `must_change_password=true` (se fuerza el
  *   cambio en el primer login) y la contraseña temporal hasheada con bcrypt.
@@ -227,6 +236,12 @@ export class UserModel {
 export async function seedInitialAdmin(): Promise<void> {
   const existing = await UserModel.findByUsername('admin');
   if (existing) {
+    return;
+  }
+
+  // Sigue siendo la red de rescate si NO queda ningún admin operativo, pero no
+  // duplica al que ya hay solo porque se llame de otra forma.
+  if ((await UserModel.countActiveAdmins()) > 0) {
     return;
   }
 

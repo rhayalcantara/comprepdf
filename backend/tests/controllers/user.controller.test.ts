@@ -365,6 +365,73 @@ describe('user.controller', () => {
       expect(updateSpy).toHaveBeenCalled();
     });
 
+    it('renombra el username -> update con el nombre recortado', async () => {
+      jest.spyOn(UserModel, 'findByUsername').mockResolvedValue(null);
+      const updateSpy = jest
+        .spyOn(UserModel, 'update')
+        .mockResolvedValue(fakeUser({ id: 'user-2', username: 'mferreras' }));
+
+      const req = {
+        params: { id: 'user-2' },
+        user: { id: 'admin-9', rol: 'admin' },
+        body: { username: '  mferreras  ' },
+      } as unknown as Request;
+      await updateUser(req, mockResponse as Response, mockNext);
+
+      expect(nextError()).toBeUndefined();
+      expect(updateSpy).toHaveBeenCalledWith('user-2', { username: 'mferreras' });
+    });
+
+    it('rechaza un username que ya tiene OTRO usuario -> 400 y no actualiza', async () => {
+      jest
+        .spyOn(UserModel, 'findByUsername')
+        .mockResolvedValue(fakeUser({ id: 'otro-7', username: 'ocupado' }));
+      const updateSpy = jest.spyOn(UserModel, 'update');
+
+      const req = {
+        params: { id: 'user-2' },
+        user: { id: 'admin-9', rol: 'admin' },
+        body: { username: 'ocupado' },
+      } as unknown as Request;
+      await updateUser(req, mockResponse as Response, mockNext);
+
+      expect(nextError()).toBeInstanceOf(ValidationError);
+      expect(updateSpy).not.toHaveBeenCalled();
+    });
+
+    it('conservar el mismo username (mismo id) no es conflicto', async () => {
+      jest
+        .spyOn(UserModel, 'findByUsername')
+        .mockResolvedValue(fakeUser({ id: 'user-2', username: 'jdoe' }));
+      const updateSpy = jest
+        .spyOn(UserModel, 'update')
+        .mockResolvedValue(fakeUser({ id: 'user-2' }));
+
+      const req = {
+        params: { id: 'user-2' },
+        user: { id: 'admin-9', rol: 'admin' },
+        body: { username: 'jdoe', nombre: 'John Doe II' },
+      } as unknown as Request;
+      await updateUser(req, mockResponse as Response, mockNext);
+
+      expect(nextError()).toBeUndefined();
+      expect(updateSpy).toHaveBeenCalled();
+    });
+
+    it('username vacío -> 400 y no actualiza', async () => {
+      const updateSpy = jest.spyOn(UserModel, 'update');
+
+      const req = {
+        params: { id: 'user-2' },
+        user: { id: 'admin-9', rol: 'admin' },
+        body: { username: '   ' },
+      } as unknown as Request;
+      await updateUser(req, mockResponse as Response, mockNext);
+
+      expect(nextError()).toBeInstanceOf(ValidationError);
+      expect(updateSpy).not.toHaveBeenCalled();
+    });
+
     it('sin campos a actualizar -> 400', async () => {
       const req = {
         params: { id: 'user-2' },

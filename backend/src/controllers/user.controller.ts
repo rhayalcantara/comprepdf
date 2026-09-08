@@ -175,9 +175,15 @@ export const createUser = async (
 };
 
 /**
- * PATCH /users/:id — (admin) edita `rol`, `estado`, `nombre`, `email` y/o resetea
- * la contraseña (`newPassword`). NO existe borrado físico: para deshabilitar un
- * usuario se pone `estado='inactivo'`.
+ * PATCH /users/:id — (admin) edita `username`, `rol`, `estado`, `nombre`, `email`
+ * y/o resetea la contraseña (`newPassword`). NO existe borrado físico: para
+ * deshabilitar un usuario se pone `estado='inactivo'`.
+ *
+ * `username` es corregible porque es el ÚNICO identificador con el que se puede
+ * iniciar sesión junto al correo, y las altas manuales dejan nombres que su
+ * dueño no acierta a teclear (con espacios, o el correo entero). Se exige único
+ * (400 si lo tiene otro); los jobs cuelgan de `user_id`, así que renombrar no
+ * toca el historial.
  *
  * Si viene `newPassword`: se hashea y se fuerza `must_change_password=true`.
  *
@@ -199,7 +205,8 @@ export const updateUser = async (
     }
 
     const { id } = req.params;
-    const { rol, estado, nombre, email, newPassword } = req.body as {
+    const { username, rol, estado, nombre, email, newPassword } = req.body as {
+      username?: string;
       rol?: string;
       estado?: string;
       nombre?: string;
@@ -226,6 +233,19 @@ export const updateUser = async (
       );
     }
 
+    // Unicidad del username: la columna es UNIQUE, así que sin este chequeo un
+    // nombre repetido saldría como 500 en vez de como error del formulario.
+    if (username !== undefined) {
+      const cleanUsername = username.trim();
+      if (!cleanUsername) {
+        throw new ValidationError('username cannot be empty');
+      }
+      const existingUsername = await UserModel.findByUsername(cleanUsername);
+      if (existingUsername && existingUsername.id !== id) {
+        throw new ValidationError('username already exists');
+      }
+    }
+
     // Unicidad de correo: evita un 500 por la restricción UNIQUE al editar el
     // email a uno ya usado por otro usuario (la columna es case-insensitive).
     if (email !== undefined && email.trim()) {
@@ -236,6 +256,9 @@ export const updateUser = async (
     }
 
     const changes: Parameters<typeof UserModel.update>[1] = {};
+    if (username !== undefined) {
+      changes.username = username.trim();
+    }
     if (rol !== undefined) {
       changes.rol = rol as UserRole;
     }

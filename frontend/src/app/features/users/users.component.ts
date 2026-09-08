@@ -229,6 +229,12 @@ const SEARCH_DEBOUNCE_MS = 300;
             </div>
             <div class="grid grid-cols-1 gap-4">
               <label class="field">
+                <span class="field-label">Usuario *</span>
+                <input class="input" [(ngModel)]="editModel.username" maxlength="100"
+                       placeholder="p. ej. jperez">
+                <span class="hint">Es lo que teclea para entrar. También puede entrar con su correo.</span>
+              </label>
+              <label class="field">
                 <span class="field-label">Nombre *</span>
                 <input class="input" [(ngModel)]="editModel.nombre" maxlength="255">
               </label>
@@ -239,7 +245,7 @@ const SEARCH_DEBOUNCE_MS = 300;
               </label>
             </div>
             <p class="text-sm text-ink-soft mt-3 m-0">
-              El nombre de usuario no se puede cambiar. Para rol, estado o contraseña usa las acciones de la tabla.
+              Para rol, estado o contraseña usa las acciones de la tabla.
             </p>
             <div class="flex justify-end gap-2 mt-5">
               <button class="btn-secondary" [disabled]="busy()" (click)="closeEdit()">Cancelar</button>
@@ -254,6 +260,7 @@ const SEARCH_DEBOUNCE_MS = 300;
   `,
   styles: [`
     .field-label { display:block; font-size:0.85rem; font-weight:600; color:var(--ink); margin-bottom:0.4rem; }
+    .hint { display:block; font-size:0.8rem; color:var(--ink-soft); margin-top:0.35rem; }
     .temp-box { display:flex; align-items:flex-start; gap:0.9rem; background:var(--cobalt-soft); border-color:var(--cobalt); }
     .temp-box > .material-icons { color:var(--cobalt-deep); }
     .temp-code { display:inline-block; margin-top:0.5rem; padding:0.35rem 0.7rem; background:#fff; border:1px solid var(--line); border-radius:8px; font-size:0.95rem; letter-spacing:0.02em; }
@@ -310,7 +317,7 @@ export class UsersComponent implements OnInit, OnDestroy {
   newUser: CreateUserPayload = { username: '', nombre: '', rol: 'user', email: '', password: '' };
 
   editingUser = signal<SafeUser | null>(null);
-  editModel: { nombre: string; email: string } = { nombre: '', email: '' };
+  editModel: { username: string; nombre: string; email: string } = { username: '', nombre: '', email: '' };
 
   constructor(
     private api: ApiService,
@@ -429,7 +436,7 @@ export class UsersComponent implements OnInit, OnDestroy {
   }
 
   openEdit(u: SafeUser): void {
-    this.editModel = { nombre: u.nombre, email: u.email ?? '' };
+    this.editModel = { username: u.username, nombre: u.nombre, email: u.email ?? '' };
     this.editingUser.set(u);
   }
 
@@ -438,7 +445,7 @@ export class UsersComponent implements OnInit, OnDestroy {
   }
 
   canSaveEdit(): boolean {
-    return this.editModel.nombre.trim().length > 0;
+    return this.editModel.username.trim().length > 0 && this.editModel.nombre.trim().length > 0;
   }
 
   saveEdit(): void {
@@ -446,8 +453,10 @@ export class UsersComponent implements OnInit, OnDestroy {
     if (!u || !this.canSaveEdit() || this.busy()) return;
 
     const changes: UpdateUserPayload = {};
+    const username = this.editModel.username.trim();
     const nombre = this.editModel.nombre.trim();
     const email = this.editModel.email.trim();
+    if (username !== u.username) changes.username = username;
     if (nombre !== u.nombre) changes.nombre = nombre;
     // '' se envía tal cual; el backend lo convierte a null (quita el correo).
     if (email !== (u.email ?? '')) changes.email = email;
@@ -462,7 +471,16 @@ export class UsersComponent implements OnInit, OnDestroy {
       next: (res) => {
         this.busy.set(false);
         if (res.success && res.data) {
-          this.snackBar.open(`${u.username} actualizado.`, 'Cerrar', { duration: 2500 });
+          const renamed = res.data.user.username !== u.username;
+          this.snackBar.open(
+            renamed
+              ? `${u.username} ahora inicia sesión como ${res.data.user.username}.`
+              : `${u.username} actualizado.`,
+            'Cerrar',
+            { duration: renamed ? 5000 : 2500 },
+          );
+          // Si el admin se renombró a sí mismo, la sesión guarda el nombre viejo.
+          if (renamed && this.isSelf(u)) this.auth.refreshMe().subscribe();
           this.closeEdit();
           this.load();
         }

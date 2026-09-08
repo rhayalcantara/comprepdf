@@ -109,6 +109,7 @@ describe('auth.controller', () => {
 
     it('usuario inexistente -> 401 Invalid credentials (mismo mensaje)', async () => {
       jest.spyOn(UserModel, 'findByUsername').mockResolvedValue(null);
+      jest.spyOn(UserModel, 'findByEmail').mockResolvedValue(null);
 
       mockRequest = { body: { username: 'ghost', password: 'x' } };
 
@@ -165,6 +166,62 @@ describe('auth.controller', () => {
       const err = nextError();
       expect(err).toBeInstanceOf(ForbiddenError);
       expect(err.message).toBe('Tu cuenta está inactiva.');
+    });
+
+    it('entra con el CORREO cuando el username no casa', async () => {
+      // El caso real de QA: la cuenta se dio de alta con un username que su
+      // dueño no acierta a teclear, pero su correo sí lo sabe.
+      const user = fakeUser({ username: 'michael ferreras', email: 'mferreras@coop.do' });
+      jest.spyOn(UserModel, 'findByUsername').mockResolvedValue(null);
+      const byEmail = jest.spyOn(UserModel, 'findByEmail').mockResolvedValue(user);
+      jest.spyOn(bcrypt, 'compare').mockResolvedValue(true as never);
+      jest.spyOn(UserModel, 'updateLastLogin').mockResolvedValue(undefined);
+
+      mockRequest = { body: { username: 'mferreras@coop.do', password: 'good-pass' } };
+
+      await login(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(mockNext).not.toHaveBeenCalled();
+      expect(byEmail).toHaveBeenCalledWith('mferreras@coop.do');
+      expect(jsonMock.mock.calls[0][0].data.user.username).toBe('michael ferreras');
+    });
+
+    it('el username manda: si casa, NO se consulta por correo', async () => {
+      jest.spyOn(UserModel, 'findByUsername').mockResolvedValue(fakeUser());
+      const byEmail = jest.spyOn(UserModel, 'findByEmail');
+      jest.spyOn(bcrypt, 'compare').mockResolvedValue(true as never);
+      jest.spyOn(UserModel, 'updateLastLogin').mockResolvedValue(undefined);
+
+      mockRequest = { body: { username: 'jdoe', password: 'good-pass' } };
+
+      await login(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(byEmail).not.toHaveBeenCalled();
+    });
+
+    it('recorta los espacios del identificador antes de buscar', async () => {
+      const byUsername = jest.spyOn(UserModel, 'findByUsername').mockResolvedValue(fakeUser());
+      jest.spyOn(bcrypt, 'compare').mockResolvedValue(true as never);
+      jest.spyOn(UserModel, 'updateLastLogin').mockResolvedValue(undefined);
+
+      mockRequest = { body: { username: '  jdoe  ', password: 'good-pass' } };
+
+      await login(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(byUsername).toHaveBeenCalledWith('jdoe');
+    });
+
+    it('correo que no existe -> 401 con el mismo mensaje genérico', async () => {
+      jest.spyOn(UserModel, 'findByUsername').mockResolvedValue(null);
+      jest.spyOn(UserModel, 'findByEmail').mockResolvedValue(null);
+
+      mockRequest = { body: { username: 'nadie@coop.do', password: 'x' } };
+
+      await login(mockRequest as Request, mockResponse as Response, mockNext);
+
+      const err = nextError();
+      expect(err).toBeInstanceOf(UnauthorizedError);
+      expect(err.message).toBe('Invalid credentials');
     });
 
     it('faltan credenciales -> 400 ValidationError', async () => {

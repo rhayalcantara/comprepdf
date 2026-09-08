@@ -21,9 +21,9 @@ import { AuthService } from '../../core/services/auth.service';
 
         <form (ngSubmit)="submit()">
           <label class="field">
-            <span class="field-label">Usuario</span>
+            <span class="field-label">Usuario o correo</span>
             <input class="input" name="username" [(ngModel)]="username" autocomplete="username"
-                   [disabled]="loading()" placeholder="usuario" autofocus>
+                   [disabled]="loading()" placeholder="usuario o correo" autofocus>
           </label>
           <label class="field">
             <span class="field-label">Contraseña</span>

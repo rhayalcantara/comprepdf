@@ -15,6 +15,8 @@ import { JwtPayload } from '../middlewares/auth.middleware';
 /**
  * POST /auth/login  { username, password } -> { token, user }
  *
+ * - `username` acepta el nombre de usuario O el correo (se busca por username
+ *   y, si no casa, por email; ambas columnas son case-insensitive).
  * - Rechaza credenciales inválidas (usuario inexistente o contraseña mala) con
  *   401 y el MISMO mensaje, para no revelar qué usernames existen.
  * - Rechaza usuarios `estado='inactivo'` con 403 (solo tras verificar la
@@ -48,7 +50,16 @@ export const login = async (
       throw new ValidationError('username and password are required');
     }
 
-    const user = await UserModel.findByUsername(username);
+    // El identificador puede ser el username o el correo. Los usuarios no
+    // recuerdan cuál de los dos se les asignó al darlos de alta (en QA hay
+    // cuentas con el username puesto a mano, con espacios o con el correo
+    // entero dentro), y como el 401 es deliberadamente genérico, quien se
+    // equivoca de nombre cree que falla la contraseña y la resetea en vano.
+    // El username manda: solo se cae al correo si no casa ninguna cuenta.
+    const identifier = username.trim();
+    const user =
+      (await UserModel.findByUsername(identifier)) ??
+      (await UserModel.findByEmail(identifier));
     if (!user) {
       throw new UnauthorizedError('Invalid credentials');
     }
