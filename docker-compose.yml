@@ -1,34 +1,47 @@
-version: '3.8'
+# docker-compose.yml — PRODUCCIÓN (192.168.113.20) y qa del catálogo del Puente.
+#
+# Lo despliega el Puente con una secuencia fija y sin opciones:
+#   git checkout main -> docker compose config -q -> docker compose build -> docker compose up -d
+# Por eso este archivo ES el de producción: sin bind mounts, un único puerto
+# publicado (el del frontend), volúmenes nombrados. El de desarrollo es
+# docker-compose.dev.yml. NUNCA versionar un docker-compose.override.yml: en
+# producción se aplicaría solo.
+#
+# Configuración SOLO por `.env` en este directorio (permisos 600). No repetir
+# aquí en `environment:` claves que estén en .env: lo de `environment:` GANA y
+# anula el .env sin avisar. Plantilla: .env.example.
+#
+# Un solo puerto hacia fuera: nginx (frontend) sirve la SPA y proxea /api al
+# backend por la red interna. MySQL y Redis no se publican al host.
+
+name: comprepdf
 
 services:
   mysql:
     image: mysql:8.0
-    container_name: comprepdf-mysql
     restart: unless-stopped
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-comprepdf}
-      MYSQL_USER: ${MYSQL_USER:-comprepdf}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-comprepdf123}
-    ports:
-      - "3306:3306"
+    env_file: .env
+    # MYSQL_ROOT_PASSWORD / MYSQL_DATABASE / MYSQL_USER / MYSQL_PASSWORD vienen del .env
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     volumes:
       - mysql_data:/var/lib/mysql
-      - ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+      # Solo en el PRIMER arranque (volumen vacío): esquema completo. Las
+      # migraciones posteriores las aplica el backend al arrancar
+      # (backend/src/services/migration.service.ts) y las registra en
+      # schema_migrations.
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 30s
     networks:
-      - comprepdf-network
+      - comprepdf
 
   redis:
     image: redis:7-alpine
-    container_name: comprepdf-redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -37,87 +50,65 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - comprepdf-network
+      - comprepdf
 
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: comprepdf-backend
+      context: .
+      dockerfile: backend/Dockerfile
     restart: unless-stopped
-    environment:
-      NODE_ENV: development
-      PORT: 3000
-      MYSQL_HOST: mysql
-      MYSQL_PORT: 3306
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-comprepdf}
-      MYSQL_USER: ${MYSQL_USER:-comprepdf}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-comprepdf123}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-    ports:
-      - "3000:3000"
+    env_file: .env
+    # Salud: GET http://<host>:${COMPREPDF_PORT}/api/v1/health (vía nginx)
+    # uploads/outputs los comparten backend (usuario node, uid 1000) y worker
+    # (usuario worker, uid 1000): mismo uid en ambas imágenes a propósito.
     volumes:
-      - ./backend:/app
-      - /app/node_modules
       - uploads_data:/app/uploads
       - outputs_data:/app/outputs
     depends_on:
       mysql:
         condition: service_healthy
       redis:
-        condition: service_healthy
+        condition: service_started
     networks:
-      - comprepdf-network
+      - comprepdf
 
-  python-worker:
+  worker:
     build:
       context: ./python-worker
       dockerfile: Dockerfile
-    container_name: comprepdf-python-worker
     restart: unless-stopped
-    environment:
-      MYSQL_HOST: mysql
-      MYSQL_PORT: 3306
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-comprepdf}
-      MYSQL_USER: ${MYSQL_USER:-comprepdf}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-comprepdf123}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      UPLOAD_DIR: /app/uploads
-      OUTPUT_DIR: /app/outputs
+    env_file: .env
     volumes:
-      - ./python-worker:/app
       - uploads_data:/app/uploads
       - outputs_data:/app/outputs
+      - ca_store:/app/ca-store
     depends_on:
       mysql:
         condition: service_healthy
-      redis:
-        condition: service_healthy
+      backend:
+        condition: service_healthy   # el backend migra el esquema antes de abrir el puerto
     networks:
-      - comprepdf-network
-    command: python -m app.workers.poller
+      - comprepdf
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: comprepdf-frontend
     restart: unless-stopped
     ports:
-      - "4200:80"
+      - "${COMPREPDF_PORT:-3060}:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
-      - comprepdf-network
+      - comprepdf
 
 volumes:
   mysql_data:
   redis_data:
   uploads_data:
   outputs_data:
+  ca_store:
 
 networks:
-  comprepdf-network:
-    driver: bridge
+  comprepdf:

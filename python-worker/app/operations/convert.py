@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from app.converters.image_pdf import convert_image
-from app.converters.office_com import convert_excel, convert_powerpoint, convert_word
+from app.converters.office import convert_excel, convert_powerpoint, convert_word
 from app.operations.common import (
     custom_basename,
     get_single_original,

@@ -33,7 +33,7 @@ def _cli_convert(argv: list) -> int:
     from pathlib import Path
 
     from app.converters.image_pdf import convert_image
-    from app.converters.office_com import convert_excel, convert_powerpoint, convert_word
+    from app.converters.office import convert_excel, convert_powerpoint, convert_word
     from app.operations.convert import EXCEL_EXTS, IMAGE_EXTS, PPT_EXTS, WORD_EXTS
 
     src, dst = Path(argv[0]), Path(argv[1])

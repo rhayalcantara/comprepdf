@@ -119,6 +119,10 @@ def _mark_failed(conn, job_id, message):
 
 def main():
     print("[poller] starting MySQL polling worker")
+    # Qué motor Office→PDF tocó (com en Windows, libreoffice en el contenedor,
+    # none = convert fallará con error claro): se ve en el log del contenedor.
+    from app.converters.office import ENGINE as office_engine
+    print(f"[poller] office engine for convert: {office_engine}")
     conn = None
     while True:
         try:

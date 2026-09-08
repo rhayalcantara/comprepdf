@@ -5,6 +5,9 @@ dotenv.config();
 export const config = {
   nodeEnv: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT || '3000', 10),
+  // Orígenes permitidos por CORS fuera de development (coma-separados).
+  corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:4200')
+    .split(',').map((o) => o.trim()).filter(Boolean),
 
   mysql: {
     host: process.env.MYSQL_HOST || 'localhost',
@@ -24,6 +27,10 @@ export const config = {
     uploadDir: process.env.UPLOAD_DIR || './uploads',
     outputDir: process.env.OUTPUT_DIR || './outputs',
     fileExpiryHours: parseInt(process.env.FILE_EXPIRY_HOURS || '24', 10),
+    // Minutos que sobrevive un paso intermedio del Estudio ya superado (tiene
+    // sucesor en su sesión) antes de purgarse, sin esperar a las 24h normales.
+    // Debe ser holgado: mientras el intermedio viva, se puede deshacer hasta él.
+    intermediateTtlMinutes: parseInt(process.env.INTERMEDIATE_JOB_TTL_MINUTES || '120', 10),
   },
 
   jwt: {

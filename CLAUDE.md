@@ -29,12 +29,42 @@ Angular (4200) → Node.js API (3000) → MySQL ← (poll) Python Worker
 
 ## Common Commands
 
-### Docker (recommended for development)
+### Docker
 ```bash
-docker-compose up -d              # Start all services
-docker-compose logs -f backend    # View backend logs
-docker-compose down               # Stop all services
+docker compose -f docker-compose.dev.yml up -d   # DESARROLLO (bind mounts, hot-reload)
+docker compose up -d --build                     # PRODUCCIÓN/qa (lo que ejecuta el Puente)
+docker compose logs -f backend
 ```
+
+**`docker-compose.yml` es el de PRODUCCIÓN** y `docker-compose.dev.yml` el de
+desarrollo. No es un capricho: producción (192.168.113.20, Ubuntu + Compose) se
+despliega con el **Puente** (MCP `puente`, proyecto `C:\Claude\Proyectos\PuenteDespliegue`),
+cuya secuencia es fija y sin opciones — `git checkout main` → `compose config -q`
+→ `compose build` → `compose up -d` — así que no admite `-f` ni profiles, y un
+`docker-compose.override.yml` versionado se aplicaría solo en producción (nunca
+crear uno). Ningún agente recibe SSH: se pide `desplegar(comprepdf, produccion)`
+y una persona confirma. Reglas que impone:
+
+- **Un solo puerto** publicado (`COMPREPDF_PORT`, 3060 en producción): nginx del
+  frontend sirve la SPA y proxea `/api` al backend; el build de producción usa
+  `apiUrl: '/api/v1'` (relativo, `environment.prod.ts`). MySQL/Redis no se publican.
+- **Configuración solo por `.env`** (plantilla `.env.example`, `env_file` en
+  todos los servicios). **No repetir en `environment:` claves del `.env`**: lo de
+  `environment:` gana y lo anula en silencio.
+- **El Puente no ejecuta SQL.** Las migraciones de `database/migrations` las
+  aplica **el backend al arrancar** (`services/migration.service.ts`, tabla
+  `schema_migrations`, idempotente: baseline si el esquema ya está al día,
+  tolera "ya existe", cualquier otro error impide arrancar). `schema.sql` solo
+  vale para el primer arranque (initdb). Nueva migración = nuevo `NNN_x.sql` y
+  reflejarla también en `schema.sql`.
+- **El backend migra antes de abrir el puerto** y el worker arranca solo cuando
+  el backend está `healthy`: nunca hay worker nuevo sobre esquema viejo.
+- **`convert` en Linux usa LibreOffice** dentro de la imagen del worker
+  (`converters/office_libre.py`); en Windows (QA nativo) sigue COM de Office.
+  `converters/office.py` elige el motor (`OFFICE_ENGINE` fuerza uno).
+- El qa del catálogo del Puente vive en la DGX Spark 192.168.2.165 (ARM64): las
+  imágenes se construyen en cada host, nunca se copian entre máquinas.
+
 
 ### Backend (Node.js)
 ```bash
@@ -78,8 +108,42 @@ mysql -u root -p comprepdf < database/schema.sql
 - `backend/src/models/` - TypeORM entities for MySQL
 - `python-worker/app/operations/` - operation handlers (compress, pdf_ops, sign, certificate)
 - `python-worker/app/workers/poller.py` - MySQL polling loop (claims & dispatches jobs)
-- `frontend/src/app/features/` - Angular feature modules (login, tools, jobs, users, …)
+- `frontend/src/app/features/` - Angular feature modules (login, tools, estudio, jobs, users, …)
 - `frontend/src/app/core/` - singleton services, guards, interceptors (auth, API)
+- `frontend/src/app/shared/pdf-markup/` - **el único** visor con capa de edición
+  (lienzo + panel de propiedades + modelo de elementos). Lo usan `/editor` y el
+  Estudio; no crear un segundo visor.
+
+## El Estudio (`/estudio`)
+
+Espacio de trabajo único donde el documento es el centro y las operaciones son
+verbos que se ejercen sobre él, en vez de 15 herramientas con su propia subida y
+su propia descarga. Ver `Docs/PLAN_ESTUDIO_PDF.md`.
+
+**Encadenado de jobs.** Toda operación acepta, además de un archivo subido, la
+**salida de un job anterior**: `sourceJobId` en el cuerpo. `resolveSourceJob`
+(`middlewares/source-job.middleware.ts`) va entre el multer y la validación, y
+deja `req.file` puesto venga de donde venga — controladores y `validatePdfFile`
+no distinguen los dos casos, y **el worker no se entera**. Ownership idéntico al
+de la descarga: job ajeno u huérfano → 404. Solo se encadena sobre PDF (un ZIP de
+split o un .docx no se siguen editando). `merge` usa `sources` (array ordenado de
+`{jobId}` / `{upload:i}`) para insertar páginas en medio del documento abierto.
+
+**Sesiones.** `compression_jobs.session_id` agrupa la cadena y `parent_job_id`
+dice de qué job salió la entrada. "Mis trabajos" muestra **un renglón por
+sesión** (el último paso; ver `LATEST_OF_SESSION` en `models/job.model.ts`), y
+`cleanup.service.ts` purga los pasos ya superados pasado
+`INTERMEDIATE_JOB_TTL_MINUTES` (120 por defecto; el TTL es lo que permite
+deshacer).
+
+**Edición diferida (frontend).** `features/estudio/workspace.service.ts` mantiene
+los cambios en memoria y solo habla con el servidor en los puntos de *flush*
+(exportar, descargar, o pulsar Aplicar). Varios cambios del mismo tipo se funden
+en UN job: reordenar+girar+eliminar → un `organize`; todo el marcado → un
+`pdf_edit`. **Invariante:** nunca hay pendientes de dos tipos a la vez —
+`ensureKind` materializa lo anterior al cambiar de tipo. Sin ella, un resaltado
+hecho antes de mover una página acabaría en la página equivocada, porque
+`MarkupElement.page` es la posición VISIBLE.
 
 ## Authentication & ownership
 
@@ -91,6 +155,14 @@ the admin-only routes.
 
 - JWT HS256, 8h expiry, `JWT_SECRET` env (fail-closed: no secret → login blocked).
   Payload `{ sub: userId, rol }`. Roles: `admin` and `user`.
+- El campo `username` del login acepta **el nombre de usuario o el correo**: se
+  busca por username y, si no casa ninguna cuenta, por email (ambas columnas son
+  case-insensitive; el username manda si coincide). Las altas manuales dejaron
+  cuentas cuyo dueño no acierta a teclear su propio nombre (con espacios, o el
+  correo entero como username), y el 401 genérico les hace creer que falla la
+  contraseña: la resetean una y otra vez sin efecto. Por lo mismo `username` es
+  editable desde `PATCH /users/:id` (único; los jobs cuelgan de `user_id`, así
+  que renombrar no toca el historial).
 - Jobs are owned (`compression_jobs.user_id`): a user only sees/downloads/deletes
   **their own** jobs — someone else's or an orphan (`user_id NULL`) returns **404**
   (not 403, to avoid revealing existence). Admin sees all.
@@ -101,12 +173,15 @@ the admin-only routes.
   to the `ALLOWED_SIGNUP_DOMAIN` email domain; an admin activates them via `PATCH`.
 - First admin is seeded at backend startup from `ADMIN_INITIAL_PASSWORD`
   (with `must_change_password`); see `models/user.model.ts` `seedInitialAdmin`.
+  No siembra si existe el usuario `admin` **ni si ya hay cualquier admin activo**
+  — como el username es editable, buscar solo 'admin' resucitaría un segundo
+  administrador con la contraseña del `.env` en cuanto renombraran al primero.
 
 ## API Endpoints
 
 ```
 # Auth (login/register are public; the rest need a token)
-POST   /api/v1/auth/login            # { username, password } -> { token, user }
+POST   /api/v1/auth/login            # { username, password } -> { token, user }; `username` = usuario O correo
 POST   /api/v1/auth/register         # self-registration (domain-restricted) -> pending user
 GET    /api/v1/auth/me               # current user profile
 POST   /api/v1/auth/change-password  # change own password
@@ -114,7 +189,7 @@ POST   /api/v1/auth/change-password  # change own password
 # Users (admin only; no physical delete — baja = estado 'inactivo')
 GET    /api/v1/users                 # list users
 POST   /api/v1/users                 # create user (returns one-time temp password)
-PATCH  /api/v1/users/:id             # edit rol/estado (activate pending) / reset password
+PATCH  /api/v1/users/:id             # edit username/nombre/email/rol/estado (activate pending) / reset password
 
 # PDF operations (create a job owned by the caller)
 POST   /api/v1/compress              # Upload and compress PDF
@@ -149,6 +224,10 @@ DELETE /api/v1/jobs/:jobId           # Delete job (owner or admin)
 GET    /api/v1/health                # Health check (public)
 ```
 
+Todas las operaciones sobre PDF aceptan además `sourceJobId` (encadenar sobre la
+salida de otro job, sin descarga intermedia) y `sessionId` (agrupar la cadena).
+Ver "El Estudio" más arriba.
+
 New operations follow one pattern: controller inserts a `compression_jobs` row
 (`operation_type` + `operation_params` JSON) and original file(s); the poller
 dispatches to `python-worker/app/operations/` and writes an `output` file row.
@@ -171,6 +250,22 @@ split it names the ZIP and the per-part prefix). Sanitized in the backend
 - `medium` (ebook): 150 DPI, 50-70% reduction
 - `high` (printer): 300 DPI, 20-40% reduction
 - `custom`: User-defined DPI
+
+Esos porcentajes valen para PDF **con imágenes**, que es lo que Ghostscript
+remuestrea. En un PDF de solo texto vectorial no hay nada que reducir: el ahorro
+cae a ~5-10% y `high` puede incluso **agrandar** el archivo al reescribirlo
+(medido en QA: 35 KB → 55 KB). No es un fallo; es lo que hace `pdfwrite`.
+
+## Ghostscript (requisito del host del worker)
+
+`compress` es la única operación que necesita un binario externo. El worker lo
+localiza con `resolve_ghostscript()` (`app/compression/ghostscript.py`):
+`GHOSTSCRIPT_PATH` si está definida → `gswin64c`/`gswin32c` en Windows → `gs`.
+
+**En Windows el ejecutable NO se llama `gs`** — asumirlo tuvo la compresión rota
+en QA desde siempre, y el síntoma (`[WinError 2] The system cannot find the file
+specified`) no menciona a Ghostscript. Si falta, el error del job ahora lo dice y
+sugiere `GHOSTSCRIPT_PATH`.
 
 ## Key Constraints
 
