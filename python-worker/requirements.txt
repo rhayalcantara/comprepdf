@@ -1,11 +1,24 @@
 fastapi==0.104.1
 uvicorn==0.24.0
-celery==5.3.4
 redis==5.0.1
 mysql-connector-python==8.2.0
 pikepdf==8.7.1
+reportlab==5.0.0
+pyHanko==0.25.1
+cryptography==49.0.0
 Pillow==10.1.0
-python-magic-bin==0.4.14
+# Solo Windows (wheel binario; no existe para Linux y nadie lo importa en app/).
+python-magic-bin==0.4.14; sys_platform == "win32"
 pydantic==2.5.2
 python-multipart==0.0.6
 python-dotenv==1.0.0
+# COM de Office (operacion convert). Solo Windows: el contenedor Linux de
+# docker-compose instala el resto y office_com.py degrada con un error claro.
+pywin32==306; sys_platform == "win32"
+# PDF -> Word (operacion pdf_to_word). Trae PyMuPDF, python-docx y opencv-headless.
+pdf2docx==0.5.13
+# PDF -> Excel (operacion pdf_to_excel): escribe el .xlsx; las tablas las
+# detecta el PyMuPDF que ya trae pdf2docx.
+openpyxl==3.1.5
+# Traducir PDF (operacion translate): cliente HTTP hacia el Ollama local.
+requests==2.34.2

@@ -1,0 +1,174 @@
+<div class="zoom-bar">
+  <button type="button" title="Alejar" (click)="setZoom(zoom - 0.25)" [disabled]="zoom <= 0.5">−</button>
+  <span class="mono">{{ (zoom * 100).toFixed(0) }}%</span>
+  <button type="button" title="Acercar" (click)="setZoom(zoom + 0.25)" [disabled]="zoom >= 3">+</button>
+  <button type="button" class="zoom-fit" title="Ajustar al ancho" (click)="setZoom(1)" [disabled]="zoom === 1">Ajustar</button>
+</div>
+<div class="canvas-scroll" (wheel)="onWheel($event)">
+  <div class="place-frame" #frame [style.width.px]="frameWidth"
+       [class.mode-active]="mode !== 'select'"
+       [class.mode-draw]="mode === 'draw'"
+       (pointerdown)="onFramePointerDown($event)"
+       (pointermove)="onFramePointerMove($event)"
+       (pointerup)="onFramePointerUp()"
+       (pointercancel)="onFramePointerUp()"
+       (dblclick)="mode === 'poly' && finishPolygon()">
+    <canvas #pageCanvas></canvas>
+    <!-- Trazo / polígono en curso -->
+    @if (drawDraft.length > 1 || polyDraft.length > 0) {
+      <svg class="draft-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
+        @if (drawDraft.length > 1) {
+          <polyline [attr.points]="draftPoints(drawDraft)" fill="none" stroke="#B42318"
+                    stroke-width="2" vector-effect="non-scaling-stroke" />
+        }
+        @if (polyDraft.length > 0) {
+          <polyline [attr.points]="draftPoints(polyDraft)" fill="none" stroke="#B42318"
+                    stroke-width="2" stroke-dasharray="4 3" vector-effect="non-scaling-stroke" />
+        }
+      </svg>
+      @for (v of polyDraft; track $index) {
+        <span class="poly-vertex" [style.left.%]="v[0] * 100" [style.top.%]="v[1] * 100"></span>
+      }
+    }
+    @for (el of elementsOnPage; track el.id) {
+      <div class="el-box"
+           [class.selected]="selectedId === el.id"
+           [class.whiteout]="el.type === 'whiteout'"
+           [style.left.%]="el.left * 100"
+           [style.top.%]="el.top * 100"
+           [style.width.%]="el.width * 100"
+           [style.height.%]="el.height * 100"
+           (pointerdown)="startDrag($event, el, 'move')"
+           (pointermove)="onDragMove($event)"
+           (pointerup)="endDrag()"
+           (pointercancel)="endDrag()"
+           (click)="select(el)">
+        @switch (el.type) {
+          @case ('image') {
+            <img [src]="el.imageUrl" alt="" draggable="false" />
+          }
+          @case ('highlight') {
+            <span class="el-fill" [style.background]="el.color"></span>
+          }
+          @case ('underline') {
+            <svg class="el-shape" viewBox="0 0 100 100" preserveAspectRatio="none">
+              <line x1="0" y1="100" x2="100" y2="100" vector-effect="non-scaling-stroke"
+                    [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
+            </svg>
+          }
+          @case ('strikeout') {
+            <svg class="el-shape" viewBox="0 0 100 100" preserveAspectRatio="none">
+              <line x1="0" y1="50" x2="100" y2="50" vector-effect="non-scaling-stroke"
+                    [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
+            </svg>
+          }
+          @case ('line') {
+            <svg class="el-shape" viewBox="0 0 100 100" preserveAspectRatio="none">
+              <line x1="0" [attr.y1]="el.dir === 'down' ? 0 : 100" x2="100"
+                    [attr.y2]="el.dir === 'down' ? 100 : 0" vector-effect="non-scaling-stroke"
+                    [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
+            </svg>
+          }
+          @case ('arrow') {
+            <svg class="el-shape" viewBox="0 0 100 100" preserveAspectRatio="none">
+              <line x1="0" [attr.y1]="el.dir === 'down' ? 0 : 100" x2="100"
+                    [attr.y2]="el.dir === 'down' ? 100 : 0" vector-effect="non-scaling-stroke"
+                    [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
+              <line x1="100" [attr.y1]="el.dir === 'down' ? 100 : 0" x2="80"
+                    [attr.y2]="el.dir === 'down' ? 94 : 6" vector-effect="non-scaling-stroke"
+                    [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
+              <line x1="100" [attr.y1]="el.dir === 'down' ? 100 : 0" x2="94"
+                    [attr.y2]="el.dir === 'down' ? 76 : 24" vector-effect="non-scaling-stroke"
+                    [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
+            </svg>
+          }
+          @case ('rect') {
+            <svg class="el-shape" viewBox="0 0 100 100" preserveAspectRatio="none">
+              <rect x="0" y="0" width="100" height="100" fill="none" vector-effect="non-scaling-stroke"
+                    [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
+            </svg>
+          }
+          @case ('ellipse') {
+            <svg class="el-shape" viewBox="0 0 100 100" preserveAspectRatio="none">
+              <ellipse cx="50" cy="50" rx="50" ry="50" fill="none" vector-effect="non-scaling-stroke"
+                       [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
+            </svg>
+          }
+          @case ('mark') {
+            <!-- Sin preserveAspectRatio none: el glifo queda cuadrado y centrado,
+                 igual que lo dibuja el worker con min(w,h). -->
+            <svg class="el-shape" viewBox="0 0 100 100">
+              @switch (el.mark) {
+                @case ('cross') {
+                  <line x1="10" y1="10" x2="90" y2="90" vector-effect="non-scaling-stroke"
+                        [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
+                  <line x1="10" y1="90" x2="90" y2="10" vector-effect="non-scaling-stroke"
+                        [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
+                }
+                @case ('dot') {
+                  <circle cx="50" cy="50" r="45" [attr.fill]="el.color" />
+                }
+                @default {
+                  <polyline points="10,50 38,85 90,15" fill="none" vector-effect="non-scaling-stroke"
+                            [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
+                }
+              }
+            </svg>
+          }
+          @case ('freehand') {
+            <svg class="el-shape" viewBox="0 0 100 100" preserveAspectRatio="none">
+              <polyline [attr.points]="svgPoints(el)" fill="none" vector-effect="non-scaling-stroke"
+                        stroke-linejoin="round" stroke-linecap="round"
+                        [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
+            </svg>
+          }
+          @case ('polygon') {
+            <svg class="el-shape" viewBox="0 0 100 100" preserveAspectRatio="none">
+              <polygon [attr.points]="svgPoints(el)" fill="none" vector-effect="non-scaling-stroke"
+                       stroke-linejoin="round"
+                       [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
+            </svg>
+          }
+          @case ('cloud') {
+            <svg class="el-shape" [attr.viewBox]="cloudView(el)" preserveAspectRatio="none">
+              <path [attr.d]="cloudPath(el)" fill="none" vector-effect="non-scaling-stroke"
+                    [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
+            </svg>
+          }
+          @case ('callout') {
+            <svg class="el-shape" viewBox="0 0 100 100" preserveAspectRatio="none">
+              <line x1="50" y1="50" [attr.x2]="tipLeftPct(el)" [attr.y2]="tipTopPct(el)"
+                    vector-effect="non-scaling-stroke"
+                    [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
+            </svg>
+            <span class="el-bubble" [style.border-color]="el.color"
+                  [style.color]="el.color" [style.font-size.px]="el.fontSize">{{ el.text }}</span>
+            <span class="tip-handle" title="Arrastra la punta de la flecha"
+                  [style.left.%]="tipLeftPct(el)" [style.top.%]="tipTopPct(el)"
+                  (pointerdown)="startDrag($event, el, 'tip')"
+                  (pointermove)="onDragMove($event)"
+                  (pointerup)="endDrag()"
+                  (pointercancel)="endDrag()"></span>
+          }
+          @case ('stamp') {
+            <span class="el-stamp" [style.border-color]="el.color" [style.color]="el.color">
+              <span class="el-stamp-text">{{ el.text }}</span>
+              @if (el.showDatetime) {
+                <span class="el-stamp-date">{{ stampDate() }}</span>
+              }
+            </span>
+          }
+          @default {
+            <span class="el-text" [style.color]="el.type === 'whiteout' ? el.textColor : el.color"
+                  [style.font-size.px]="el.fontSize">{{ el.text }}</span>
+          }
+        }
+        <span class="el-handle"
+              (pointerdown)="startDrag($event, el, 'resize')"
+              (pointermove)="onDragMove($event)"
+              (pointerup)="endDrag()"
+              (pointercancel)="endDrag()"></span>
+      </div>
+    }
+  </div>
+</div>

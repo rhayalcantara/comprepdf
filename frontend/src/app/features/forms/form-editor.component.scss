@@ -1,0 +1,448 @@
+:host {
+  --panel-bg: #fff;
+  display: block;
+}
+
+/* --- Barra de acciones del editor --- */
+.editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 0;
+  flex-wrap: wrap;
+}
+
+.back-link {
+  color: var(--ink-soft);
+  font-weight: 500;
+  text-decoration: none;
+  &:hover { color: var(--cobalt); }
+}
+
+.doc-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #22c55e;
+  &.busy { background: #f59e0b; animation: pulse 1s infinite; }
+}
+
+@keyframes pulse { 50% { opacity: 0.4; } }
+
+.toolbar-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.btn {
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+
+  &.primary { background: var(--cobalt); border-color: var(--cobalt); color: #fff; }
+  &.primary:hover:not(:disabled) { filter: brightness(1.05); }
+  &.secondary:hover:not(:disabled) { border-color: var(--cobalt); background: var(--mist); }
+  &:disabled { opacity: 0.55; cursor: not-allowed; }
+}
+
+/* --- Layout 3 columnas --- */
+.workspace {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr) 320px;
+  gap: 1.25rem;
+  align-items: start;
+  padding-bottom: 2rem;
+}
+
+@media (max-width: 1100px) {
+  .workspace { grid-template-columns: 1fr; }
+}
+
+.panel {
+  background: var(--panel-bg);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 1.1rem;
+  position: sticky;
+  top: 80px;
+}
+
+@media (max-width: 1100px) {
+  .panel { position: static; }
+}
+
+.panel-heading { margin-bottom: 0.9rem; h2 { font-size: 1.05rem; margin: 0.1rem 0 0; } }
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--cobalt);
+  margin: 0;
+}
+
+.field {
+  display: block;
+  margin-bottom: 0.75rem;
+  > span { display: block; font-size: 0.78rem; font-weight: 600; color: var(--ink-soft); margin-bottom: 0.3rem; }
+  input, select, textarea {
+    width: 100%;
+    padding: 0.5rem 0.6rem;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    font: inherit;
+    color: var(--ink);
+    background: #fff;
+    &:focus { outline: none; border-color: var(--cobalt); box-shadow: 0 0 0 3px var(--cobalt-soft); }
+  }
+  small { display: block; margin-top: 0.25rem; font-size: 0.72rem; color: var(--ink-soft); }
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--ink);
+  cursor: pointer;
+  input { width: 16px; height: 16px; }
+}
+
+.section-divider { height: 1px; background: var(--line); margin: 1rem 0; }
+.section-label { font-size: 0.78rem; font-weight: 700; color: var(--ink); margin: 0 0 0.5rem; }
+
+.question-type-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+  button {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.45rem 0.5rem;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    font: inherit;
+    font-size: 0.78rem;
+    color: var(--ink);
+    cursor: pointer;
+    &:hover { border-color: var(--cobalt); background: var(--mist); }
+    .type-icon { color: var(--cobalt); font-weight: 700; }
+  }
+}
+
+/* --- Lienzo central --- */
+.canvas-column { min-width: 0; }
+
+.canvas-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  h1 { font-size: 1.4rem; margin: 0.1rem 0 0; }
+  span { font-size: 0.85rem; color: var(--ink-soft); }
+}
+
+.btn.full { width: 100%; }
+
+.alert {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b42318;
+  padding: 0.6rem 0.85rem;
+  border-radius: 10px;
+  margin-bottom: 1rem;
+  font-size: 0.88rem;
+}
+
+.paper {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(16, 24, 40, 0.06);
+  padding: 2rem;
+  max-width: 720px;
+  margin: 0 auto;
+  &.a4 { max-width: 680px; }
+}
+
+.paper-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 1rem;
+  margin-bottom: 1.25rem;
+  .paper-kicker { text-transform: uppercase; letter-spacing: 0.1em; font-size: 0.68rem; color: var(--ink-soft); margin: 0; }
+  h2 { font-size: 1.35rem; margin: 0.35rem 0 0.25rem; color: #14213d; }
+  p { margin: 0; color: var(--ink-soft); font-size: 0.9rem; }
+}
+
+.paper-header-text { flex: 1; min-width: 0; }
+
+// Espejo del logo del PDF: arriba a la derecha, acotado por alto.
+.paper-logo { flex: 0 0 auto; max-height: 42px; max-width: 130px; object-fit: contain; }
+
+.question-head { display: flex; align-items: flex-start; gap: 0.35rem; }
+.question-head-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+.question-icon { flex: 0 0 auto; width: 14px; height: 14px; object-fit: contain; margin-top: 2px; }
+
+// Ranura de imagen del panel: miniatura + botón de quitar.
+.image-slot {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  img { max-height: 40px; max-width: 100%; object-fit: contain; }
+  &.icon-slot img { max-height: 24px; }
+}
+
+.file-drop {
+  display: block;
+  padding: 0.5rem;
+  cursor: pointer;
+  input { display: none; }
+  &:hover { border-color: var(--cobalt); color: var(--cobalt); }
+}
+
+.paper-body { display: flex; flex-direction: column; gap: 1.25rem; }
+
+.paper-section {
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 0.5rem;
+  &.active { border-color: var(--line); }
+}
+
+.section-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.5rem;
+  padding-bottom: 0.5rem;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid var(--line);
+}
+
+// El título se queda con el ancho sobrante y empuja los controles a una segunda
+// fila cuando el lienzo es estrecho, en vez de recortarse.
+.section-title-input {
+  flex: 1 1 11rem;
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 0.3rem 0.45rem;
+  font: inherit;
+  font-weight: 700;
+  color: #14213d;
+  background: transparent;
+  &:hover { border-color: var(--line); }
+  &:focus { border-color: var(--cobalt); outline: none; background: #fff; }
+}
+
+.section-columns {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.3rem 0.4rem;
+  font-size: 0.8rem;
+}
+
+.check-row.inline {
+  flex: 0 0 auto;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.page-break-hint,
+.section-empty,
+.file-drop { font-size: 0.78rem; color: var(--ink-soft); }
+
+.section-empty,
+.file-drop {
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  text-align: center;
+}
+
+.page-break-hint {
+  margin: 0 0 0.6rem;
+  padding-top: 0.4rem;
+  border-top: 1px dashed var(--line);
+}
+
+.section-empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 0.9rem;
+}
+
+// Rejilla espejo de la del PDF: `grid-auto-flow: row` (el default) empaqueta
+// igual que el worker — lo que no cabe en la fila baja y deja el hueco. No usar
+// `dense`: rellenaría los huecos y la vista previa mentiría.
+.section-questions {
+  display: grid;
+  gap: 0.75rem;
+  align-items: start;
+  min-height: 48px;
+  border-radius: 10px;
+
+  // Sin ordenado en vivo del CDK no hay hueco que anticipe la posición, así que
+  // al menos marcamos qué sección va a recibir la pregunta.
+  &.cdk-drop-list-receiving,
+  &.cdk-drop-list-dragging { box-shadow: inset 0 0 0 1px var(--cobalt); }
+}
+
+.question-card {
+  display: flex;
+  gap: 0.5rem;
+  text-align: left;
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 0.75rem;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  transition: border-color 0.15s, background 0.15s;
+  &:hover { background: var(--mist); }
+  &.selected { border-color: var(--cobalt); background: var(--cobalt-soft); }
+  &.cdk-drag-preview {
+    background: #fff;
+    border-color: var(--cobalt);
+    box-shadow: 0 8px 24px rgba(18, 35, 63, 0.18);
+  }
+  &.cdk-drag-placeholder { opacity: 0.35; }
+}
+
+.drag-handle {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  color: var(--ink-soft);
+  cursor: grab;
+}
+
+.question-content { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+.question-label { font-weight: 600; color: #182230; em { color: #b42318; font-style: normal; } }
+.question-content small { color: var(--ink-soft); font-size: 0.78rem; }
+
+.mock-input {
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f9fafb;
+  display: flex;
+  align-items: center;
+  padding: 0 0.6rem;
+  font-size: 0.8rem;
+  color: #98a2b3;
+  &.tall { height: 68px; align-items: flex-start; padding-top: 0.5rem; }
+  b { margin-left: auto; }
+}
+
+.mock-options { display: flex; flex-direction: column; gap: 0.35rem; }
+.mock-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.82rem;
+  color: #344054;
+  i { width: 15px; height: 15px; border: 1.5px solid #98a2b3; border-radius: 3px; display: inline-block; &.radio { border-radius: 50%; } }
+}
+
+.paper-footer {
+  border-top: 1px solid var(--line);
+  margin-top: 1.5rem;
+  padding-top: 0.75rem;
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: #667085;
+}
+
+.empty-state, .empty-properties {
+  text-align: center;
+  padding: 2rem 1rem;
+  color: var(--ink-soft);
+  strong { display: block; color: var(--ink); margin-bottom: 0.35rem; }
+  span { font-size: 0.85rem; }
+}
+
+/* --- Panel de propiedades --- */
+.properties-heading { display: flex; align-items: flex-start; justify-content: space-between; }
+
+.icon-button.danger {
+  width: 30px;
+  height: 30px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fff;
+  color: #b42318;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  &:hover { background: #fef2f2; }
+}
+
+.order-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  button {
+    flex: 1;
+    padding: 0.45rem;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    font: inherit;
+    font-size: 0.8rem;
+    cursor: pointer;
+    &:hover { border-color: var(--cobalt); background: var(--mist); }
+  }
+}
+
+.pdf-preview {
+  margin-top: 1.25rem;
+  border-top: 1px solid var(--line);
+  padding-top: 1rem;
+  .pdf-preview-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+    strong { font-size: 0.9rem; }
+    button {
+      border: 1px solid var(--cobalt);
+      color: var(--cobalt);
+      background: #fff;
+      border-radius: 8px;
+      padding: 0.3rem 0.7rem;
+      font: inherit;
+      font-size: 0.8rem;
+      cursor: pointer;
+      &:hover { background: var(--cobalt-soft); }
+    }
+  }
+  iframe { width: 100%; height: 360px; border: 1px solid var(--line); border-radius: 10px; }
+}

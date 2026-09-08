@@ -4,6 +4,54 @@
 
 Fecha de finalización: 21 de noviembre de 2025
 
+---
+
+## ⭐ Actualización (2026-07-03): Operaciones PDF + corrección de la tubería job→worker
+
+Se extendió ComprePDF de "solo compresión" a **8 operaciones** y se corrigió un
+defecto crítico pre-existente en la entrega de trabajos.
+
+### Corrección crítica: cola → worker
+La versión original encolaba con **BullMQ** (Node) pero el worker consumía con
+**Celery** (Python): formatos Redis incompatibles, sin ningún consumidor real →
+**los trabajos nunca llegaban al worker** (ni la compresión funcionaba de punta a
+punta). Se reemplazó por **polling a MySQL**:
+- El backend solo inserta la fila del job (`status='pending'`); ya no usa BullMQ.
+- Nuevo `python-worker/app/workers/poller.py` reclama trabajos con
+  `SELECT ... FOR UPDATE SKIP LOCKED` (seguro para múltiples réplicas) y despacha
+  por `operation_type`. Se eliminaron Celery y `queue.service.ts`.
+
+### Nuevas operaciones PDF
+| Operación | Endpoint | Librería | Salida |
+|-----------|----------|----------|--------|
+| Dividir (split) | `POST /api/v1/pdf/split` | pikepdf | ZIP de páginas/rangos |
+| Unir (merge) | `POST /api/v1/pdf/merge` | pikepdf | 1 PDF |
+| Firmar (digital) | `POST /api/v1/pdf/sign` | pyHanko | PDF firmado (PKCS#12) |
+| Extraer (extract) | `POST /api/v1/pdf/extract` | pikepdf | 1 PDF |
+| Rotar (rotate) | `POST /api/v1/pdf/rotate` | pikepdf | 1 PDF |
+| Proteger (protect) | `POST /api/v1/pdf/protect` | pikepdf | PDF cifrado |
+| Desbloquear (unlock) | `POST /api/v1/pdf/unlock` | pikepdf | PDF sin cifrado |
+
+- **Firma digital criptográfica** con certificado `.pfx/.p12` (validable en
+  visores). El certificado se usa una vez y se **destruye inmediatamente** tras
+  firmar (nunca se persiste ni se registra en logs).
+- Estado/descarga/borrado reutilizan los endpoints genéricos `/jobs/:jobId`.
+- Frontend: nueva página **Herramientas PDF** (`/tools`) con una pestaña por
+  operación (`MatTabsModule`).
+- BD: `compression_jobs` gana `operation_type` + `operation_params (JSON)`;
+  `files.file_type` incluye `output`. Migración en
+  `database/migrations/001_pdf_operations.sql`.
+
+### Verificación realizada
+- Backend: `tsc --noEmit` sin errores.
+- Python: 8 tests (`tests/test_pdf_operations.py`) en verde (split, merge,
+  extract, rotate, protect+unlock, contraseña incorrecta, cert ausente) +
+  verificación e2e de firma digital (firma íntegra y válida, cert eliminado).
+- Pendiente de ejecutar por el usuario: `docker-compose up --build` para la
+  integración completa de los 4 servicios.
+
+---
+
 ## Resumen Ejecutivo
 
 Se ha completado exitosamente la implementación del servicio de compresión de PDFs "ComprePDF", siguiendo una arquitectura de microservicios con Angular, Node.js y Python.

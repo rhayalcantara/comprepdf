@@ -1,0 +1,369 @@
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-decoration: none;
+
+  .material-icons {
+    font-size: 18px;
+  }
+
+  &:hover {
+    color: var(--cobalt);
+  }
+}
+
+.field-label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 0.5rem;
+}
+
+.cert-picker {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.7rem 1rem;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease;
+
+  .material-icons {
+    font-size: 20px;
+    color: var(--cobalt);
+  }
+
+  &:hover {
+    border-color: var(--cobalt);
+    color: var(--ink);
+  }
+}
+
+.hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  margin: 0.25rem 0 0;
+
+  .material-icons {
+    font-size: 18px;
+    color: var(--ok);
+  }
+}
+
+.done-icon {
+  font-size: 42px;
+  color: var(--ok);
+}
+
+// --- Previsualización / editor de rangos ---
+.preview-note {
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+
+.range-card {
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+
+  .range-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin: 0 0 0.6rem;
+    font-weight: 600;
+
+    .mono {
+      font-size: 0.8rem;
+      font-weight: 400;
+      color: var(--ink-soft);
+    }
+  }
+
+  .range-thumb {
+    width: 110px;
+  }
+}
+
+/* --- Sello de texto de la firma dibujada --- */
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--ink);
+  cursor: pointer;
+
+  input { width: 16px; height: 16px; }
+}
+
+.stamp-panel {
+  margin-top: 0.75rem;
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--mist);
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.chip {
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink-soft);
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+
+  &:hover { color: var(--ink); border-color: var(--cobalt); }
+  &.active { background: var(--cobalt-soft); color: var(--cobalt); border-color: var(--cobalt); }
+}
+
+.color-chip {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  box-shadow: 0 0 0 1px var(--line);
+  cursor: pointer;
+
+  &.active { border-color: var(--paper); box-shadow: 0 0 0 2px var(--cobalt); }
+}
+
+.seg-group {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+
+  .seg {
+    flex: 1;
+    padding: 0.55rem 0.5rem;
+    border: none;
+    background: var(--paper);
+    color: var(--ink-soft);
+    font-family: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+
+    & + .seg {
+      border-left: 1px solid var(--line);
+    }
+
+    &:hover {
+      color: var(--ink);
+    }
+
+    &.active {
+      background: var(--cobalt-soft);
+      color: var(--cobalt);
+    }
+  }
+}
+
+.range-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+
+  .range-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: var(--cobalt-soft);
+    color: var(--cobalt);
+    font-size: 0.75rem;
+    flex-shrink: 0;
+  }
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  min-width: 0;
+
+  .stepper-tag {
+    font-size: 0.75rem;
+    color: var(--ink-soft);
+    margin-right: 0.1rem;
+  }
+
+  .stepper-input {
+    width: 3.2rem;
+    padding: 0.35rem 0.3rem;
+    text-align: center;
+    -moz-appearance: textfield;
+
+    &::-webkit-outer-spin-button,
+    &::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+  }
+
+  .icon-btn {
+    width: 26px;
+    height: 26px;
+
+    .material-icons {
+      font-size: 16px;
+    }
+  }
+}
+
+// --- Firmar: modos, lienzo de firma y colocación ---
+.mode-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.mode-card {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.65rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+
+  .material-icons {
+    font-size: 22px;
+    color: var(--ink-soft);
+    flex-shrink: 0;
+  }
+
+  .mode-txt {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+
+    strong {
+      font-size: 0.9rem;
+      color: var(--ink);
+    }
+
+    small {
+      font-size: 0.75rem;
+      color: var(--ink-soft);
+    }
+  }
+
+  &:hover {
+    border-color: var(--cobalt);
+  }
+
+  &.active {
+    border-color: var(--cobalt);
+    background: var(--cobalt-soft);
+
+    .material-icons {
+      color: var(--cobalt);
+    }
+  }
+}
+
+.sig-pad-frame {
+  position: relative;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+
+  .sig-canvas {
+    display: block;
+    width: 100%;
+    height: 150px;
+    touch-action: none;
+  }
+
+  .sig-pad-ph {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    color: #9aa7ba;
+    font-size: 0.85rem;
+    pointer-events: none;
+  }
+}
+
+.sig-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ink-swatch {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+
+  &.ink-black {
+    background: #000000;
+  }
+
+  &.ink-blue {
+    background: #1e40af;
+  }
+
+  &.active {
+    box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--cobalt);
+  }
+}
+
+.page-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.error-box {
+  display: flex;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: 10px;
+  background: var(--danger-soft);
+  color: var(--danger);
+
+  .material-icons {
+    font-size: 22px;
+  }
+}

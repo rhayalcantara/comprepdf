@@ -1,0 +1,16 @@
+__pycache__
+**/__pycache__
+*.pyc
+.venv
+venv
+build
+dist
+*.spec
+*.exe
+tests
+uploads
+outputs
+ca-store
+.env
+*.bat
+smoke.*

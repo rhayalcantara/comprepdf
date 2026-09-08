@@ -8,10 +8,14 @@ export const initializeRedis = async (): Promise<RedisClientType> => {
     socket: {
       host: config.redis.host,
       port: config.redis.port,
+      // Redis es opcional (ya no es broker). No reintentar indefinidamente ni
+      // bloquear el arranque: si no conecta al primer intento, connect() rechaza.
+      reconnectStrategy: false,
+      connectTimeout: 2000,
     },
   });
 
-  redisClient.on('error', (err) => console.error('Redis Client Error:', err));
+  redisClient.on('error', (err) => console.error('Redis Client Error:', (err as Error).message));
   redisClient.on('connect', () => console.log('Redis connection established'));
 
   await redisClient.connect();

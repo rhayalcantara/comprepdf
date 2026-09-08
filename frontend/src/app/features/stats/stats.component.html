@@ -1,197 +1,365 @@
-<div class="stats-container p-6">
-  <div class="flex justify-between items-center mb-6">
-    <h1 class="text-3xl font-bold">Estadísticas del Sistema</h1>
-    <button mat-raised-button color="primary" (click)="loadAllStats()" [disabled]="loading()">
-      <mat-icon>refresh</mat-icon>
+<div class="pt-8 pb-16">
+  <!-- Encabezado -->
+  <div class="flex flex-col md:flex-row md:items-end justify-between gap-3 mb-8">
+    <div>
+      <p class="eyebrow mb-2">{{ isAdmin() ? 'Administración' : 'Actividad' }}</p>
+      <h1 class="font-display text-2xl md:text-3xl font-bold m-0">{{ heading() }}</h1>
+      <p class="text-ink-soft m-0 mt-1">{{ subheading() }}</p>
+    </div>
+    <button class="btn-ghost" (click)="loadAll()" [disabled]="loading()">
+      <span class="material-icons">refresh</span>
       Actualizar
     </button>
   </div>
 
-  <!-- Loading State -->
-  <div *ngIf="loading()" class="flex justify-center items-center py-12">
-    <mat-spinner></mat-spinner>
-  </div>
-
-  <!-- Error State -->
-  <div *ngIf="error() && !loading()" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6">
-    {{ error() }}
-  </div>
-
-  <!-- Stats Content -->
-  <div *ngIf="!loading() && !error()">
-    <!-- Global Stats Cards -->
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-      <mat-card class="stat-card">
-        <mat-card-header>
-          <mat-card-title class="text-lg">Total de Trabajos</mat-card-title>
-        </mat-card-header>
-        <mat-card-content>
-          <div class="text-4xl font-bold text-blue-600">{{ globalStats()?.totalJobs || 0 }}</div>
-          <div class="text-sm text-gray-600 mt-2">
-            {{ globalStats()?.completedJobs || 0 }} completados, {{ globalStats()?.failedJobs || 0 }} fallidos
-          </div>
-        </mat-card-content>
-      </mat-card>
-
-      <mat-card class="stat-card">
-        <mat-card-header>
-          <mat-card-title class="text-lg">Tasa de Éxito</mat-card-title>
-        </mat-card-header>
-        <mat-card-content>
-          <div class="text-4xl font-bold text-green-600">{{ globalStats()?.successRate || 0 }}%</div>
-          <div class="text-sm text-gray-600 mt-2">
-            {{ globalStats()?.pendingJobs || 0 }} pendientes
-          </div>
-        </mat-card-content>
-      </mat-card>
-
-      <mat-card class="stat-card">
-        <mat-card-header>
-          <mat-card-title class="text-lg">Ratio Promedio</mat-card-title>
-        </mat-card-header>
-        <mat-card-content>
-          <div class="text-4xl font-bold text-purple-600">{{ globalStats()?.avgCompressionRatio || 0 }}%</div>
-          <div class="text-sm text-gray-600 mt-2">
-            de compresión
-          </div>
-        </mat-card-content>
-      </mat-card>
-
-      <mat-card class="stat-card">
-        <mat-card-header>
-          <mat-card-title class="text-lg">Espacio Ahorrado</mat-card-title>
-        </mat-card-header>
-        <mat-card-content>
-          <div class="text-4xl font-bold text-orange-600">
-            {{ formatBytes(globalStats()?.totalSpaceSaved || 0) }}
-          </div>
-          <div class="text-sm text-gray-600 mt-2">
-            en {{ globalStats()?.totalCompressions || 0 }} compresiones
-          </div>
-        </mat-card-content>
-      </mat-card>
+  <!-- Carga -->
+  @if (loading()) {
+    <div class="flex justify-center items-center py-16">
+      <mat-spinner></mat-spinner>
     </div>
+  }
 
-    <!-- Daily Stats -->
-    <mat-card class="mb-6">
-      <mat-card-header>
-        <mat-card-title>Estadísticas Diarias (Últimos 7 días)</mat-card-title>
-      </mat-card-header>
-      <mat-card-content>
-        <div *ngIf="dailyStats().length === 0" class="text-gray-500 text-center py-4">
-          No hay datos disponibles
-        </div>
-        <div *ngIf="dailyStats().length > 0" class="overflow-x-auto">
-          <table class="w-full">
-            <thead>
-              <tr class="border-b">
-                <th class="text-left py-2 px-4">Fecha</th>
-                <th class="text-right py-2 px-4">Compresiones</th>
-                <th class="text-right py-2 px-4">Ratio Promedio</th>
-                <th class="text-right py-2 px-4">Tiempo Promedio</th>
-                <th class="text-right py-2 px-4">Espacio Ahorrado</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr *ngFor="let stat of dailyStats()" class="border-b hover:bg-gray-50">
-                <td class="py-2 px-4">{{ stat.date }}</td>
-                <td class="text-right py-2 px-4">{{ stat.compressions }}</td>
-                <td class="text-right py-2 px-4">{{ stat.avgCompressionRatio }}%</td>
-                <td class="text-right py-2 px-4">{{ stat.avgProcessingTimeMs }}ms</td>
-                <td class="text-right py-2 px-4">{{ formatBytes(stat.spaceSaved) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </mat-card-content>
-    </mat-card>
+  <!-- Error -->
+  @if (error() && !loading()) {
+    <div class="error-box mb-6">
+      <span class="material-icons">error_outline</span>
+      <p class="m-0">{{ error() }}</p>
+    </div>
+  }
 
-    <!-- Compression Level Stats -->
-    <mat-card class="mb-6">
-      <mat-card-header>
-        <mat-card-title>Distribución por Nivel de Compresión</mat-card-title>
-      </mat-card-header>
-      <mat-card-content>
-        <div *ngIf="levelStats().length === 0" class="text-gray-500 text-center py-4">
-          No hay datos disponibles
+  @if (!loading() && !error()) {
+    <!-- Panel vacío -->
+    @if (isEmpty()) {
+      <div class="sheet p-10 text-center empty-state">
+        <span class="material-icons empty-icon">insights</span>
+        <h2 class="font-display text-xl font-semibold mt-3 mb-1">
+          {{ isAdmin() ? 'Todavía no hay actividad' : 'Aún no tienes trabajos' }}
+        </h2>
+        <p class="text-ink-soft max-w-md mx-auto mb-5">
+          {{ isAdmin()
+            ? 'Cuando los usuarios empiecen a procesar PDFs, aquí verás las métricas del servicio.'
+            : 'Comprime, une, firma o transforma un PDF y tu actividad aparecerá aquí.' }}
+        </p>
+        <a routerLink="/" class="btn-cta">
+          <span class="material-icons">grid_view</span>
+          Ir a las herramientas
+        </a>
+      </div>
+    } @else {
+      <!-- ================= KPIs ================= -->
+      <div class="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+        <div class="sheet p-5">
+          <p class="tile-label">Trabajos</p>
+          <p class="tile-value mono">{{ overview()?.totalJobs || 0 }}</p>
+          <p class="tile-hint">{{ isAdmin() ? 'en total' : 'míos en total' }}</p>
         </div>
-        <div *ngIf="levelStats().length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div *ngFor="let stat of levelStats()" class="bg-gray-50 rounded p-4">
-            <div class="text-lg font-semibold">{{ getLevelLabel(stat.level) }}</div>
-            <div class="text-3xl font-bold text-blue-600 mt-2">{{ stat.count }}</div>
-            <div class="text-sm text-gray-600">trabajos</div>
+        <div class="sheet p-5">
+          <p class="tile-label">Completados</p>
+          <p class="tile-value mono text-ok">{{ overview()?.completedJobs || 0 }}</p>
+          <p class="tile-hint">finalizados con éxito</p>
+        </div>
+        <div class="sheet p-5">
+          <p class="tile-label">Fallidos</p>
+          <p class="tile-value mono" [class.text-danger]="(overview()?.failedJobs || 0) > 0">
+            {{ overview()?.failedJobs || 0 }}
+          </p>
+          <p class="tile-hint">con error</p>
+        </div>
+        <div class="sheet p-5">
+          <p class="tile-label">En proceso</p>
+          <p class="tile-value mono">{{ (overview()?.processingJobs || 0) + (overview()?.pendingJobs || 0) }}</p>
+          <p class="tile-hint">{{ overview()?.pendingJobs || 0 }} en cola</p>
+        </div>
+        <div class="sheet p-5 col-span-2 lg:col-span-1">
+          <p class="tile-label">Tasa de éxito</p>
+          <p class="tile-value mono">{{ overview()?.successRate || 0 }}%</p>
+          <p class="tile-hint">de {{ overview()?.totalJobs || 0 }} trabajos</p>
+        </div>
+      </div>
+
+      <!-- ============ Uso por herramienta ============ -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+        <div class="sheet p-6 lg:col-span-2">
+          <h2 class="card-title">Uso por herramienta</h2>
+          @if (operationBars().length === 0) {
+            <div class="empty-note">Aún no hay operaciones registradas.</div>
+          } @else {
+            <div class="op-bars">
+              @for (bar of operationBars(); track bar.operation) {
+                <div class="op-bar-row">
+                  <div class="op-bar-label">
+                    <span class="op-chip" [style.background]="bar.meta.hueSoft" [style.color]="bar.meta.hue">
+                      <span class="material-icons">{{ bar.meta.icon }}</span>
+                    </span>
+                    <span class="op-name">{{ bar.meta.label }}</span>
+                  </div>
+                  <div class="op-bar-track">
+                    <div class="op-bar-fill" [style.width.%]="bar.widthPct" [style.background]="bar.meta.hue"></div>
+                  </div>
+                  <div class="op-bar-count mono">
+                    {{ bar.total }}
+                    @if (bar.failed > 0) {
+                      <span class="op-fail" title="Fallidos">· {{ bar.failed }} fallidos</span>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+          }
+        </div>
+
+        <!-- Donut de distribución -->
+        <div class="sheet p-6">
+          <h2 class="card-title">Distribución</h2>
+          @if (donutSegments().length === 0) {
+            <div class="empty-note">Sin datos.</div>
+          } @else {
+            <div class="donut-wrap">
+              <svg viewBox="0 0 140 140" class="donut" role="img" aria-label="Distribución de operaciones">
+                <g transform="rotate(-90 70 70)">
+                  <circle cx="70" cy="70" [attr.r]="donutRadius" class="donut-track"></circle>
+                  @for (seg of donutSegments(); track seg.operation) {
+                    <circle
+                      cx="70" cy="70" [attr.r]="donutRadius"
+                      fill="none" [attr.stroke]="seg.meta.hue" stroke-width="16"
+                      [attr.stroke-dasharray]="seg.dash + ' ' + (donutCirc - seg.dash)"
+                      [attr.stroke-dashoffset]="seg.offset">
+                      <title>{{ seg.meta.label }}: {{ seg.count }} ({{ seg.pct }}%)</title>
+                    </circle>
+                  }
+                </g>
+                <text x="70" y="66" text-anchor="middle" class="donut-num">{{ donutTotal() }}</text>
+                <text x="70" y="82" text-anchor="middle" class="donut-cap">trabajos</text>
+              </svg>
+              <ul class="donut-legend">
+                @for (seg of donutSegments(); track seg.operation) {
+                  <li>
+                    <span class="dot" [style.background]="seg.meta.hue"></span>
+                    <span class="flex-1">{{ seg.meta.label }}</span>
+                    <span class="mono text-ink-soft">{{ seg.pct }}%</span>
+                  </li>
+                }
+              </ul>
+            </div>
+          }
+        </div>
+      </div>
+
+      <!-- ============ Tarjeta de compresión ============ -->
+      @if (hasCompression()) {
+        <div class="sheet p-6 mb-8 compression-card">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="op-chip sm" style="background:#eaefff;color:#2e5bff">
+              <span class="material-icons">compress</span>
+            </span>
+            <h2 class="card-title m-0">Métricas de compresión</h2>
+          </div>
+          <p class="text-ink-soft text-sm mt-0 mb-5">
+            Específicas de la herramienta de comprimir ({{ overview()?.compression?.totalCompressions }} compresiones).
+          </p>
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+            <div class="metric">
+              <p class="tile-label">Ratio medio</p>
+              <p class="tile-value mono">{{ overview()?.compression?.avgCompressionRatio }}%</p>
+            </div>
+            <div class="metric">
+              <p class="tile-label">Espacio ahorrado</p>
+              <p class="tile-value mono">{{ formatBytes(overview()?.compression?.totalSpaceSaved || 0) }}</p>
+            </div>
+            <div class="metric">
+              <p class="tile-label">Tiempo medio</p>
+              <p class="tile-value mono">{{ formatMs(overview()?.compression?.avgProcessingTimeMs || 0) }}</p>
+            </div>
+            <div class="metric">
+              <p class="tile-label">Total procesado</p>
+              <p class="tile-value mono">{{ formatBytes(overview()?.compression?.totalOriginalBytes || 0) }}</p>
+            </div>
+          </div>
+          @if (compressionLevels().length > 0) {
+            <p class="tile-label mb-2">Por nivel de calidad</p>
+            <div class="level-pills">
+              @for (lvl of compressionLevels(); track lvl.level) {
+                <span class="level-pill">
+                  {{ levelLabel(lvl.level) }}
+                  <b class="mono">{{ lvl.count }}</b>
+                </span>
+              }
+            </div>
+          }
+        </div>
+      }
+
+      <!-- ============ Tendencia ============ -->
+      <div class="sheet p-6 mb-8">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h2 class="card-title m-0">Tendencia de actividad</h2>
+          <div class="range-toggle" role="group" aria-label="Rango de días">
+            <button [class.active]="range() === 7" (click)="setRange(7)" [disabled]="trendLoading()">7 días</button>
+            <button [class.active]="range() === 30" (click)="setRange(30)" [disabled]="trendLoading()">30 días</button>
           </div>
         </div>
-      </mat-card-content>
-    </mat-card>
 
-    <!-- Recent Jobs -->
-    <mat-card>
-      <mat-card-header>
-        <mat-card-title>Trabajos Recientes</mat-card-title>
-      </mat-card-header>
-      <mat-card-content>
-        <div *ngIf="recentJobs().length === 0" class="text-gray-500 text-center py-4">
-          No hay trabajos recientes
+        @if (trendLoading()) {
+          <div class="empty-note">Cargando…</div>
+        } @else if (trendDays().length === 0) {
+          <div class="empty-note">No hay actividad en los últimos {{ range() }} días.</div>
+        } @else {
+          <div class="trend-chart" [style.--cols]="trendDays().length">
+            @for (day of trendDays(); track trackByDate($index, day)) {
+              <div class="trend-col" [title]="day.total + ' trabajo(s) · ' + day.label">
+                <div class="trend-bar">
+                  @for (seg of day.segments; track seg.operation) {
+                    <div class="trend-seg"
+                         [style.height.%]="seg.heightPct"
+                         [style.background]="seg.color"
+                         [title]="metaFor(seg.operation).label + ': ' + seg.count"></div>
+                  }
+                </div>
+                <div class="trend-x mono">{{ day.label }}</div>
+              </div>
+            }
+          </div>
+          <div class="trend-legend">
+            @for (item of trendLegend(); track trackByOp($index, item)) {
+              <span class="legend-item">
+                <span class="dot" [style.background]="item.meta.hue"></span>
+                {{ item.meta.label }}
+              </span>
+            }
+          </div>
+        }
+      </div>
+
+      <!-- ============ Bloques SOLO admin ============ -->
+      @if (isAdmin() && overview()?.users; as users) {
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+          <!-- Usuarios -->
+          <div class="sheet p-6">
+            <h2 class="card-title">Usuarios</h2>
+            <div class="grid grid-cols-3 gap-3 mb-4">
+              <div class="metric">
+                <p class="tile-label">Total</p>
+                <p class="tile-value mono">{{ users.total }}</p>
+              </div>
+              <div class="metric">
+                <p class="tile-label">Activos</p>
+                <p class="tile-value mono text-ok">{{ users.activos }}</p>
+              </div>
+              <div class="metric">
+                <p class="tile-label">Inactivos</p>
+                <p class="tile-value mono">{{ users.inactivos }}</p>
+              </div>
+            </div>
+            <a routerLink="/usuarios" class="pending-card" [class.has-pending]="users.pendientes > 0">
+              <span class="material-icons">{{ users.pendientes > 0 ? 'notifications_active' : 'how_to_reg' }}</span>
+              <span class="flex-1">
+                <b>{{ users.pendientes }}</b>
+                {{ users.pendientes === 1 ? 'usuario pendiente' : 'usuarios pendientes' }} de activación
+              </span>
+              <span class="material-icons chev">chevron_right</span>
+            </a>
+          </div>
+
+          <!-- Top usuarios -->
+          <div class="sheet p-6">
+            <h2 class="card-title">Usuarios más activos</h2>
+            @if ((overview()?.topUsers?.length || 0) === 0) {
+              <div class="empty-note">Sin actividad de usuarios.</div>
+            } @else {
+              <ul class="top-users">
+                @for (u of overview()?.topUsers; track u.userId) {
+                  <li>
+                    <span class="rank-avatar">{{ (u.username || '?').charAt(0).toUpperCase() }}</span>
+                    <span class="flex-1 truncate">{{ u.username || '(huérfano)' }}</span>
+                    <span class="mono text-ink-soft">{{ u.jobs }}</span>
+                  </li>
+                }
+              </ul>
+            }
+          </div>
+
+          <!-- Salud -->
+          <div class="sheet p-6">
+            <h2 class="card-title">Salud del servicio</h2>
+            <ul class="health-list">
+              <li>
+                <span class="material-icons" [class.text-danger]="(overview()?.failedJobs || 0) > 0" [class.text-ink-soft]="(overview()?.failedJobs || 0) === 0">error</span>
+                <span class="flex-1">Trabajos fallidos</span>
+                <span class="mono" [class.text-danger]="(overview()?.failedJobs || 0) > 0">{{ overview()?.failedJobs || 0 }}</span>
+              </li>
+              <li>
+                <span class="material-icons text-ink-soft">hourglass_top</span>
+                <span class="flex-1">En proceso / cola</span>
+                <span class="mono">{{ (overview()?.processingJobs || 0) + (overview()?.pendingJobs || 0) }}</span>
+              </li>
+              <li>
+                <span class="material-icons text-ink-soft">database</span>
+                <span class="flex-1">Almacenamiento (salidas)</span>
+                <span class="mono">{{ formatBytes(overview()?.storage?.outputBytes || 0) }}</span>
+              </li>
+            </ul>
+          </div>
         </div>
-        <div *ngIf="recentJobs().length > 0" class="overflow-x-auto">
-          <table mat-table [dataSource]="recentJobs()" class="w-full">
-            <!-- Filename Column -->
-            <ng-container matColumnDef="filename">
-              <th mat-header-cell *matHeaderCellDef>Archivo</th>
-              <td mat-cell *matCellDef="let job">
-                <div class="font-medium">{{ job.originalFilename || 'N/A' }}</div>
-                <div class="text-xs text-gray-500">{{ job.jobId.substring(0, 8) }}...</div>
-              </td>
-            </ng-container>
+      }
 
-            <!-- Status Column -->
-            <ng-container matColumnDef="status">
-              <th mat-header-cell *matHeaderCellDef>Estado</th>
-              <td mat-cell *matCellDef="let job">
-                <div class="flex items-center" [ngClass]="getStatusColor(job.status)">
-                  <mat-icon class="mr-1 text-sm">{{ getStatusIcon(job.status) }}</mat-icon>
-                  {{ job.status }}
-                </div>
-              </td>
-            </ng-container>
-
-            <!-- Level Column -->
-            <ng-container matColumnDef="level">
-              <th mat-header-cell *matHeaderCellDef>Nivel</th>
-              <td mat-cell *matCellDef="let job">{{ getLevelLabel(job.compressionLevel) }}</td>
-            </ng-container>
-
-            <!-- Ratio Column -->
-            <ng-container matColumnDef="ratio">
-              <th mat-header-cell *matHeaderCellDef>Compresión</th>
-              <td mat-cell *matCellDef="let job">
-                <div *ngIf="job.compressionRatio !== null" class="font-medium">
-                  {{ job.compressionRatio }}%
-                </div>
-                <div *ngIf="job.originalSize && job.compressedSize" class="text-xs text-gray-500">
-                  {{ formatBytes(job.originalSize) }} → {{ formatBytes(job.compressedSize) }}
-                </div>
-                <div *ngIf="job.compressionRatio === null" class="text-gray-400">-</div>
-              </td>
-            </ng-container>
-
-            <!-- Date Column -->
-            <ng-container matColumnDef="date">
-              <th mat-header-cell *matHeaderCellDef>Fecha</th>
-              <td mat-cell *matCellDef="let job">
-                <div>{{ job.createdAt | date:'short' }}</div>
-                <div *ngIf="job.completedAt" class="text-xs text-gray-500">
-                  Completado: {{ job.completedAt | date:'short' }}
-                </div>
-              </td>
-            </ng-container>
-
-            <tr mat-header-row *matHeaderRowDef="recentJobsColumns"></tr>
-            <tr mat-row *matRowDef="let row; columns: recentJobsColumns;" class="hover:bg-gray-50"></tr>
-          </table>
-        </div>
-      </mat-card-content>
-    </mat-card>
-  </div>
+      <!-- ============ Actividad reciente ============ -->
+      <div class="sheet p-6">
+        <h2 class="card-title">Actividad reciente</h2>
+        @if (recentJobs().length === 0) {
+          <div class="empty-note">
+            Aún no hay trabajos. Empieza desde <a routerLink="/">las herramientas</a>.
+          </div>
+        } @else {
+          <div class="overflow-x-auto">
+            <table class="recent-table">
+              <thead>
+                <tr>
+                  <th>Operación</th>
+                  <th>Archivo</th>
+                  @if (isAdmin()) { <th>Usuario</th> }
+                  <th>Estado</th>
+                  <th class="text-right">Detalle</th>
+                  <th>Fecha</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (job of recentJobs(); track job.jobId) {
+                  <tr>
+                    <td>
+                      <div class="op-cell">
+                        <span class="op-chip xs" [style.background]="metaFor(job.operationType).hueSoft" [style.color]="metaFor(job.operationType).hue">
+                          <span class="material-icons">{{ metaFor(job.operationType).icon }}</span>
+                        </span>
+                        {{ metaFor(job.operationType).label }}
+                      </div>
+                    </td>
+                    <td class="filename" [title]="job.originalFilename || ''">
+                      {{ job.originalFilename || '—' }}
+                    </td>
+                    @if (isAdmin()) {
+                      <td class="text-ink-soft">{{ job.username || '(huérfano)' }}</td>
+                    }
+                    <td>
+                      <span class="status-cell status-{{ job.status }}">
+                        <mat-icon>{{ getStatusIcon(job.status) }}</mat-icon>
+                        {{ statusLabel(job.status) }}
+                      </span>
+                    </td>
+                    <td class="text-right mono text-sm">
+                      @if (job.operationType === 'compress' && job.compressionRatio !== null) {
+                        <span class="text-ink">{{ job.compressionRatio }}%</span>
+                      } @else {
+                        <span class="text-ink-soft">—</span>
+                      }
+                    </td>
+                    <td class="mono text-sm text-ink-soft">{{ job.createdAt | date:'dd/MM/yy HH:mm' }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      </div>
+    }
+  }
 </div>

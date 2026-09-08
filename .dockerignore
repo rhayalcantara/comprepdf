@@ -1,0 +1,11 @@
+# Contexto raíz: solo lo usa la imagen del backend (backend/ + database/migrations).
+*
+!backend/
+!database/migrations/
+backend/node_modules
+backend/dist
+backend/coverage
+backend/uploads
+backend/outputs
+backend/.env
+backend/tests

@@ -1,0 +1,695 @@
+@if (tool(); as t) {
+  <div class="mx-auto pt-8 pb-16" [class.max-w-2xl]="!wideLayout()" [class.max-w-6xl]="wideLayout()">
+
+    <a routerLink="/" class="back-link">
+      <span class="material-icons">arrow_back</span>
+      Todas las herramientas
+    </a>
+
+    <!-- Firmar: selector de modo (compartido entre ambos layouts) -->
+    <ng-template #signModeTpl>
+      <div class="mode-cards" role="radiogroup" aria-label="Tipo de firma">
+        <button type="button" class="mode-card" [class.active]="signMode() === 'certificate'"
+                (click)="signMode.set('certificate')">
+          <span class="material-icons">verified_user</span>
+          <span class="mode-txt">
+            <strong>Digital (certificado)</strong>
+            <small>Firma criptográfica con tu .pfx / .p12</small>
+          </span>
+        </button>
+        <button type="button" class="mode-card" [class.active]="signMode() === 'drawn'"
+                (click)="signMode.set('drawn')">
+          <span class="material-icons">gesture</span>
+          <span class="mode-txt">
+            <strong>Dibujada</strong>
+            <small>Dibuja tu firma o sube una imagen y estámpala</small>
+          </span>
+        </button>
+        <button type="button" class="mode-card" [class.active]="signMode() === 'combined'"
+                (click)="signMode.set('combined')">
+          <span class="material-icons">workspace_premium</span>
+          <span class="mode-txt">
+            <strong>Combinada</strong>
+            <small>Firma dibujada + firma digital con certificado</small>
+          </span>
+        </button>
+      </div>
+      @if (signMode() === 'drawn') {
+        <p class="hint mt-2">
+          <span class="material-icons">info</span>
+          La firma dibujada es visual. Para validez criptográfica usa el modo digital o el combinado.
+        </p>
+      }
+    </ng-template>
+
+    <!-- Firmar: campos del certificado (modo digital y combinado) -->
+    <ng-template #signCertTpl>
+      <div class="field">
+        <span class="field-label">Certificado (.pfx / .p12)</span>
+        @if (!signCert) {
+          <label class="cert-picker">
+            <span class="material-icons">badge</span>
+            <span>Seleccionar certificado…</span>
+            <input type="file" accept=".pfx,.p12" hidden (change)="pickSingle($event, 'signCert')">
+          </label>
+        } @else {
+          <div class="file-row">
+            <span class="material-icons">badge</span>
+            <span class="flex-1 truncate">{{ signCert.name }}</span>
+            <button type="button" class="icon-btn" (click)="signCert = null" aria-label="Quitar certificado">
+              <span class="material-icons">close</span>
+            </button>
+          </div>
+        }
+      </div>
+      <label class="field">
+        <span class="field-label">Contraseña del certificado</span>
+        <input class="input" type="password" [(ngModel)]="signPassword">
+      </label>
+      <label class="field">
+        <span class="field-label">Motivo (opcional)</span>
+        <input class="input" [(ngModel)]="signReason" placeholder="Aprobado">
+      </label>
+      <label class="field">
+        <span class="field-label">Ubicación (opcional)</span>
+        <input class="input" [(ngModel)]="signLocation">
+      </label>
+      <p class="hint">
+        <span class="material-icons">verified_user</span>
+        El certificado se usa una sola vez y se elimina inmediatamente tras firmar.
+      </p>
+    </ng-template>
+
+    <!-- Encabezado de la herramienta -->
+    <header class="flex items-center gap-4 mt-4 mb-6">
+      <span class="tool-chip" [style.background]="t.hueSoft">
+        <span class="material-icons" [style.color]="t.hue">{{ t.icon }}</span>
+      </span>
+      <div>
+        <h1 class="font-display text-2xl md:text-3xl font-bold m-0">{{ t.title }}</h1>
+        <p class="text-ink-soft m-0 mt-1">{{ t.description }}</p>
+      </div>
+    </header>
+
+    @if (wideLayout()) {
+      <!-- ============ LAYOUT ANCHO: preview + panel de opciones ============ -->
+      <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] items-start">
+
+        <!-- IZQUIERDA: previsualización -->
+        <section class="sheet p-6 min-w-0">
+          <div class="file-row">
+            <span class="material-icons">description</span>
+            <span class="flex-1 truncate">{{ mainFile()?.name }}</span>
+            <span class="size">{{ formatSize(mainFile()?.size || 0) }}</span>
+            <button type="button" class="icon-btn" (click)="clearMainFile()" aria-label="Quitar archivo">
+              <span class="material-icons">close</span>
+            </button>
+          </div>
+
+          <div class="mt-5">
+            @switch (previewStatus()) {
+              @case ('loading') {
+                <mat-progress-bar mode="indeterminate"></mat-progress-bar>
+                <p class="mt-3 text-center text-ink-soft m-0">Generando vista previa…</p>
+              }
+              @case ('password') {
+                <p class="hint">
+                  <span class="material-icons">lock</span>
+                  Este PDF está protegido: no hay vista previa, pero puedes continuar con la operación.
+                </p>
+              }
+              @case ('error') {
+                <p class="hint">
+                  <span class="material-icons">error_outline</span>
+                  No se pudo generar la vista previa. Puedes continuar con la operación.
+                </p>
+              }
+              @case ('ready') {
+                @if (previewDoc(); as doc) {
+                  @switch (toolId()) {
+                    @case ('split') {
+                      @if (splitMode() === 'individual') {
+                        <p class="preview-note">Se creará un PDF por cada una de las {{ pageCount() }} páginas.</p>
+                        <app-pdf-page-grid [doc]="doc" [selectable]="false" />
+                      } @else {
+                        <div class="flex flex-col gap-4">
+                          @for (r of splitEffectiveRanges(); track $index) {
+                            <div class="range-card">
+                              <p class="range-title">
+                                Rango {{ $index + 1 }}
+                                <span class="mono">pág. {{ r.from }}–{{ r.to }}</span>
+                              </p>
+                              <div class="flex items-end gap-3">
+                                <div class="range-thumb"><app-pdf-thumb [doc]="doc" [page]="r.from" /></div>
+                                @if (r.to > r.from) {
+                                  <span class="material-icons text-ink-soft mb-8">more_horiz</span>
+                                  <div class="range-thumb"><app-pdf-thumb [doc]="doc" [page]="r.to" /></div>
+                                }
+                              </div>
+                            </div>
+                          }
+                        </div>
+                      }
+                    }
+                    @case ('extract') {
+                      <p class="preview-note">
+                        Haz clic en las páginas que quieres extraer.
+                        <strong>{{ extractSelection().size }}</strong> seleccionada(s).
+                      </p>
+                      <app-pdf-page-grid [doc]="doc"
+                                         [selected]="extractSelection()"
+                                         (pageToggle)="onExtractThumbToggle($event)" />
+                    }
+                    @case ('rotate') {
+                      <p class="preview-note">
+                        @if (rotateScope() === 'all') {
+                          Todas las páginas girarán {{ rotateDegrees }}°. Haz clic en una página para rotar solo algunas.
+                        } @else {
+                          Solo girarán las páginas seleccionadas ({{ rotateSelection().size }}).
+                        }
+                      </p>
+                      <app-pdf-page-grid [doc]="doc"
+                                         [selected]="rotateSelection()"
+                                         [rotation]="rotateDegrees"
+                                         [rotateScope]="rotateScope() === 'all' ? 'all' : 'selected'"
+                                         (pageToggle)="onRotateThumbToggle($event)" />
+                    }
+                    @case ('sign') {
+                      <div class="flex items-center justify-between gap-3 mb-3">
+                        <p class="preview-note m-0">
+                          @if (signImageUrl()) {
+                            Arrastra el recuadro para colocar tu firma; usa el punto azul para cambiar el tamaño.
+                          } @else {
+                            Dibuja o sube tu firma en el panel de la derecha para colocarla aquí.
+                          }
+                        </p>
+                        <div class="page-nav">
+                          <button type="button" class="icon-btn" (click)="stepSignPage(-1)"
+                                  [disabled]="signCurrentPage() <= 1" aria-label="Página anterior">
+                            <span class="material-icons">chevron_left</span>
+                          </button>
+                          <span class="mono text-sm">{{ signCurrentPage() }} / {{ pageCount() }}</span>
+                          <button type="button" class="icon-btn" (click)="stepSignPage(1)"
+                                  [disabled]="signCurrentPage() >= pageCount()" aria-label="Página siguiente">
+                            <span class="material-icons">chevron_right</span>
+                          </button>
+                        </div>
+                      </div>
+                      <app-sign-placement
+                        [doc]="doc"
+                        [page]="signCurrentPage()"
+                        [imageUrl]="signImageUrl()"
+                        [imageAspect]="signImageAspect()"
+                        [stampLines]="signStampLines()"
+                        [stampColor]="signStampColor()"
+                        [stampBorder]="signStampBorder()"
+                        (placementChange)="onSignPlacement($event)" />
+                    }
+                  }
+                }
+              }
+            }
+          </div>
+        </section>
+
+        <!-- DERECHA: opciones + CTA -->
+        <aside class="sheet p-6 lg:sticky lg:top-6">
+          @switch (toolId()) {
+
+            @case ('split') {
+              @if (hasPreview()) {
+                <div class="seg-group" role="radiogroup" aria-label="Modo de división">
+                  <button type="button" class="seg" [class.active]="splitMode() === 'ranges'"
+                          (click)="splitMode.set('ranges')">Personalizado</button>
+                  <button type="button" class="seg" [class.active]="splitMode() === 'fixed'"
+                          (click)="splitMode.set('fixed')">Fijo</button>
+                  <button type="button" class="seg" [class.active]="splitMode() === 'individual'"
+                          (click)="splitMode.set('individual')">Por página</button>
+                </div>
+
+                @if (splitMode() === 'ranges') {
+                  <div class="mt-4 flex flex-col gap-3">
+                    @for (r of splitRangesList(); track $index) {
+                      <div class="range-row">
+                        <span class="range-label mono">{{ $index + 1 }}</span>
+                        <div class="stepper">
+                          <span class="stepper-tag">de</span>
+                          <button type="button" class="icon-btn" (click)="stepSplitRange($index, 'from', -1)" aria-label="Página inicial anterior">
+                            <span class="material-icons">remove</span>
+                          </button>
+                          <input class="input mono stepper-input" type="number" min="1" [max]="pageCount()"
+                                 [ngModel]="r.from" (ngModelChange)="updateSplitRange($index, 'from', $event)">
+                          <button type="button" class="icon-btn" (click)="stepSplitRange($index, 'from', 1)" aria-label="Página inicial siguiente">
+                            <span class="material-icons">add</span>
+                          </button>
+                        </div>
+                        <div class="stepper">
+                          <span class="stepper-tag">a</span>
+                          <button type="button" class="icon-btn" (click)="stepSplitRange($index, 'to', -1)" aria-label="Página final anterior">
+                            <span class="material-icons">remove</span>
+                          </button>
+                          <input class="input mono stepper-input" type="number" min="1" [max]="pageCount()"
+                                 [ngModel]="r.to" (ngModelChange)="updateSplitRange($index, 'to', $event)">
+                          <button type="button" class="icon-btn" (click)="stepSplitRange($index, 'to', 1)" aria-label="Página final siguiente">
+                            <span class="material-icons">add</span>
+                          </button>
+                        </div>
+                        @if (splitRangesList().length > 1) {
+                          <button type="button" class="icon-btn" (click)="removeSplitRange($index)" aria-label="Quitar rango">
+                            <span class="material-icons">close</span>
+                          </button>
+                        }
+                      </div>
+                    }
+                    <button type="button" class="btn-ghost justify-center" (click)="addSplitRange()">
+                      <span class="material-icons">add</span>
+                      Añadir rango
+                    </button>
+                  </div>
+                }
+
+                @if (splitMode() === 'fixed') {
+                  <div class="mt-4">
+                    <span class="field-label">Dividir cada</span>
+                    <div class="stepper">
+                      <button type="button" class="icon-btn" (click)="stepFixedSize(-1)" aria-label="Menos páginas">
+                        <span class="material-icons">remove</span>
+                      </button>
+                      <input class="input mono stepper-input" type="number" min="1" [max]="pageCount()"
+                             [ngModel]="splitFixedSize()" (ngModelChange)="splitFixedSize.set($event || 1)">
+                      <button type="button" class="icon-btn" (click)="stepFixedSize(1)" aria-label="Más páginas">
+                        <span class="material-icons">add</span>
+                      </button>
+                      <span class="text-sm text-ink-soft">páginas</span>
+                    </div>
+                    <p class="text-sm text-ink-soft mt-2 mb-0">
+                      Se crearán <strong>{{ splitEffectiveRanges().length }}</strong> PDFs.
+                    </p>
+                  </div>
+                }
+
+                @if (splitMode() === 'individual') {
+                  <p class="text-sm text-ink-soft mt-4 mb-0">
+                    Cada página del documento se guardará como un PDF independiente dentro de un ZIP.
+                  </p>
+                }
+
+                @if (splitMode() !== 'individual') {
+                  <label class="radio-row mt-4">
+                    <input type="checkbox" [ngModel]="splitMergeOne()" (ngModelChange)="splitMergeOne.set($event)">
+                    Unir todos los rangos en un solo PDF
+                  </label>
+                }
+              } @else {
+                <!-- Fallback sin preview: rangos por texto -->
+                <label class="field">
+                  <span class="field-label">Rangos (separados por coma)</span>
+                  <input class="input mono" [(ngModel)]="splitRangesFallback" placeholder="1-3,5,8-10">
+                </label>
+              }
+            }
+
+            @case ('extract') {
+              <label class="field">
+                <span class="field-label">Páginas a extraer</span>
+                <input class="input mono" [ngModel]="extractPagesInput"
+                       (ngModelChange)="onExtractInputChange($event)"
+                       (blur)="hasPreview() && normalizeExtractInput()"
+                       placeholder="1-3,5,8">
+              </label>
+              @if (hasPreview()) {
+                <p class="text-sm text-ink-soft m-0">
+                  También puedes hacer clic en las miniaturas para seleccionar.
+                </p>
+              }
+            }
+
+            @case ('rotate') {
+              <label class="field">
+                <span class="field-label">Grados</span>
+                <select class="select" [(ngModel)]="rotateDegrees">
+                  <option [ngValue]="90">90° (horario)</option>
+                  <option [ngValue]="180">180°</option>
+                  <option [ngValue]="270">270°</option>
+                </select>
+              </label>
+              @if (hasPreview()) {
+                <span class="field-label">Aplicar a</span>
+                <div class="seg-group" role="radiogroup" aria-label="Páginas a rotar">
+                  <button type="button" class="seg" [class.active]="rotateScope() === 'all'"
+                          (click)="setRotateScope('all')">Todas</button>
+                  <button type="button" class="seg" [class.active]="rotateScope() === 'custom'"
+                          (click)="setRotateScope('custom')">Seleccionadas</button>
+                </div>
+              } @else {
+                <label class="field">
+                  <span class="field-label">Páginas ("all" o 1-3,5)</span>
+                  <input class="input mono" [(ngModel)]="rotatePagesInput" placeholder="all">
+                </label>
+              }
+            }
+
+            @case ('sign') {
+              <ng-container *ngTemplateOutlet="signModeTpl"></ng-container>
+
+              <div class="mt-5">
+                <span class="field-label">Tu firma</span>
+                <div class="seg-group" role="radiogroup" aria-label="Origen de la firma">
+                  <button type="button" class="seg" [class.active]="signSource() === 'draw'"
+                          (click)="signSource.set('draw')">Dibujar</button>
+                  <button type="button" class="seg" [class.active]="signSource() === 'upload'"
+                          (click)="signSource.set('upload')">Subir imagen</button>
+                </div>
+
+                @if (signSource() === 'draw') {
+                  <div class="sig-pad-frame mt-3">
+                    <canvas #sigCanvas class="sig-canvas"></canvas>
+                    @if (!signDrawnUrl()) {
+                      <span class="sig-pad-ph">Dibuja aquí tu firma</span>
+                    }
+                  </div>
+                  <div class="sig-controls mt-2">
+                    <span class="text-sm text-ink-soft">Tinta</span>
+                    <button type="button" class="ink-swatch ink-black" [class.active]="signInk() === 'black'"
+                            (click)="setSignInk('black')" aria-label="Tinta negra"></button>
+                    <button type="button" class="ink-swatch ink-blue" [class.active]="signInk() === 'blue'"
+                            (click)="setSignInk('blue')" aria-label="Tinta azul"></button>
+                    <span class="flex-1"></span>
+                    <button type="button" class="icon-btn" (click)="undoSignStroke()" aria-label="Deshacer trazo" title="Deshacer">
+                      <span class="material-icons">undo</span>
+                    </button>
+                    <button type="button" class="icon-btn" (click)="clearSignPad()" aria-label="Limpiar firma" title="Limpiar">
+                      <span class="material-icons">delete_outline</span>
+                    </button>
+                  </div>
+                } @else {
+                  @if (!signUploadFile) {
+                    <label class="cert-picker mt-3">
+                      <span class="material-icons">image</span>
+                      <span>Imagen PNG/JPG (máx. 2 MB)…</span>
+                      <input type="file" accept="image/png,image/jpeg" hidden (change)="onSignImagePicked($event)">
+                    </label>
+                  } @else {
+                    <div class="file-row mt-3">
+                      <span class="material-icons">image</span>
+                      <span class="flex-1 truncate">{{ signUploadFile.name }}</span>
+                      <button type="button" class="icon-btn" (click)="clearSignUpload()" aria-label="Quitar imagen">
+                        <span class="material-icons">close</span>
+                      </button>
+                    </div>
+                  }
+                }
+              </div>
+
+              <div class="mt-5">
+                <span class="field-label">Aplicar en</span>
+                <div class="seg-group" role="radiogroup" aria-label="Páginas donde estampar">
+                  <button type="button" class="seg" [class.active]="signPagesScope() === 'current'"
+                          (click)="signPagesScope.set('current')">Esta página</button>
+                  <button type="button" class="seg" [class.active]="signPagesScope() === 'all'"
+                          (click)="signPagesScope.set('all')">Todas</button>
+                  <button type="button" class="seg" [class.active]="signPagesScope() === 'range'"
+                          (click)="signPagesScope.set('range')">Rango</button>
+                </div>
+                @if (signPagesScope() === 'range') {
+                  <input class="input mono mt-2" [(ngModel)]="signPagesRange" placeholder="1,3-5">
+                }
+              </div>
+
+              <!-- Sello: texto y/o fecha bajo la firma, dentro del mismo recuadro -->
+              <div class="mt-5">
+                <label class="check-row">
+                  <input type="checkbox" [ngModel]="signStampOn()"
+                         (ngModelChange)="signStampOn.set($event)">
+                  <span class="field-label m-0">Añadir sello de texto</span>
+                </label>
+
+                @if (signStampOn()) {
+                  <div class="stamp-panel">
+                    <div class="chip-row">
+                      @for (preset of stampPresets; track preset) {
+                        <button type="button" class="chip"
+                                [class.active]="signStampText() === preset"
+                                (click)="useStampPreset(preset)">{{ preset }}</button>
+                      }
+                    </div>
+
+                    <label class="field">
+                      <span class="field-label">Texto</span>
+                      <input class="input" maxlength="60" placeholder="p. ej. AUTORIZADO"
+                             [ngModel]="signStampText()" (ngModelChange)="signStampText.set($event)">
+                    </label>
+
+                    <label class="check-row">
+                      <input type="checkbox" [ngModel]="signStampDatetime()"
+                             (ngModelChange)="signStampDatetime.set($event)">
+                      <span>Incluir fecha</span>
+                    </label>
+
+                    @if (signStampDatetime()) {
+                      <div class="seg-group" role="radiogroup" aria-label="Formato de la fecha">
+                        <button type="button" class="seg" [class.active]="signStampFormat() === 'datetime'"
+                                (click)="signStampFormat.set('datetime')">Fecha y hora</button>
+                        <button type="button" class="seg" [class.active]="signStampFormat() === 'date'"
+                                (click)="signStampFormat.set('date')">Solo fecha</button>
+                      </div>
+                      <p class="text-sm text-ink-soft mt-1 mb-0">
+                        La marca la pone el servidor al procesar el documento.
+                      </p>
+                    }
+
+                    <div class="mt-3">
+                      <span class="field-label">Color</span>
+                      <div class="chip-row">
+                        @for (c of stampColors; track c.hex) {
+                          <button type="button" class="color-chip"
+                                  [class.active]="signStampColor() === c.hex"
+                                  [style.background]="c.hex"
+                                  [title]="c.name"
+                                  [attr.aria-label]="c.name"
+                                  (click)="signStampColor.set(c.hex)"></button>
+                        }
+                      </div>
+                    </div>
+
+                    <label class="check-row mt-3">
+                      <input type="checkbox" [ngModel]="signStampBorder()"
+                             (ngModelChange)="signStampBorder.set($event)">
+                      <span>Recuadro alrededor del sello</span>
+                    </label>
+                  </div>
+                }
+              </div>
+
+              @if (signMode() === 'combined') {
+                <div class="mt-5">
+                  <ng-container *ngTemplateOutlet="signCertTpl"></ng-container>
+                </div>
+              }
+            }
+          }
+
+          <label class="field mt-4">
+            <span class="field-label">Nombre del resultado (opcional)</span>
+            <input class="input" [(ngModel)]="outputName" maxlength="100" placeholder="p. ej. contrato_final">
+          </label>
+          @if (toolId() === 'split' && splitMode() !== 'individual' && !splitMergeOne()) {
+            <p class="text-sm text-ink-soft mt-1 mb-0">Nombrará el ZIP y cada PDF dentro.</p>
+          }
+
+          <button class="btn-cta w-full mt-6" [disabled]="isProcessing()" (click)="runCurrent()">
+            @if (isProcessing()) {
+              Procesando…
+            } @else {
+              {{ t.cta }}
+            }
+          </button>
+        </aside>
+      </div>
+    } @else {
+      <!-- ============ LAYOUT ORIGINAL: una columna ============ -->
+      <div class="sheet p-6 md:p-8">
+
+        <!-- Zona de archivo principal (todas las herramientas) -->
+        @if (toolId() !== 'merge') {
+          @if (!mainFile()) {
+            <label class="dropzone" [class.dragging]="isDragging()"
+                   (dragover)="onDragOver($event)" (dragleave)="onDragLeave($event)" (drop)="onDrop($event)">
+              <span class="material-icons">upload_file</span>
+              <p class="mt-2 mb-1 font-medium">
+                {{ toolId() === 'convert'
+                  ? 'Arrastra tu documento aquí o haz clic para seleccionar'
+                  : 'Arrastra tu PDF aquí o haz clic para seleccionar' }}
+              </p>
+              <p class="text-sm text-ink-soft m-0">Máximo 50 MB</p>
+              <input type="file" [attr.accept]="mainAccept()" hidden (change)="pickMain($event)">
+            </label>
+          } @else {
+            <div class="file-row">
+              <span class="material-icons">description</span>
+              <span class="flex-1 truncate">{{ mainFile()?.name }}</span>
+              <span class="size">{{ formatSize(mainFile()?.size || 0) }}</span>
+              <button type="button" class="icon-btn" (click)="clearMainFile()" aria-label="Quitar archivo">
+                <span class="material-icons">close</span>
+              </button>
+            </div>
+          }
+        } @else {
+          <!-- Merge: miniaturas, reordenamiento y páginas por archivo -->
+          <app-merge-builder (entriesChange)="onMergeEntries($event)" />
+        }
+
+        <!-- Opciones específicas por herramienta (solo las que no usan el layout ancho) -->
+        <div class="mt-6">
+          @switch (toolId()) {
+
+            @case ('sign') {
+              <div class="mb-5">
+                <ng-container *ngTemplateOutlet="signModeTpl"></ng-container>
+              </div>
+              @if (signMode() === 'certificate') {
+                <ng-container *ngTemplateOutlet="signCertTpl"></ng-container>
+              } @else {
+                <p class="hint">
+                  <span class="material-icons">gesture</span>
+                  Sube un PDF arriba para dibujar tu firma y colocarla sobre el documento.
+                </p>
+              }
+            }
+
+            @case ('protect') {
+              <label class="field">
+                <span class="field-label">Contraseña nueva</span>
+                <input class="input" type="password" [(ngModel)]="protectPassword">
+              </label>
+            }
+
+            @case ('unlock') {
+              <label class="field">
+                <span class="field-label">Contraseña actual del PDF</span>
+                <input class="input" type="password" [(ngModel)]="unlockPassword">
+              </label>
+            }
+
+            @case ('pdf-to-excel') {
+              <div class="field">
+                <span class="field-label">Qué esperar</span>
+                <p class="text-sm text-ink-soft m-0">
+                  Extrae las <strong>tablas</strong> del PDF a un libro de Excel:
+                  una hoja por tabla, con la página de origen en el nombre. El
+                  texto fuera de tablas no se exporta.
+                </p>
+                <p class="text-sm text-ink-soft mt-2 mb-0">
+                  Si el PDF no tiene tablas detectables (o es un escaneo), la
+                  operación lo indicará. Para el documento completo usa PDF a Word.
+                </p>
+              </div>
+            }
+
+            @case ('pdf-to-word') {
+              <div class="field">
+                <span class="field-label">Qué esperar</span>
+                <p class="text-sm text-ink-soft m-0">
+                  El resultado es un .docx editable con el texto, las tablas y las
+                  imágenes reconstruidos. Un PDF no guarda la estructura original,
+                  así que el formato puede requerir ajustes en Word.
+                </p>
+                <p class="text-sm text-ink-soft mt-2 mb-0">
+                  Los PDFs protegidos con contraseña o escaneados (sin texto) no
+                  se pueden convertir; desbloquéalos primero con la herramienta
+                  Desbloquear.
+                </p>
+              </div>
+            }
+
+            @case ('pdf-translate') {
+              <label class="field">
+                <span class="field-label">Idioma destino</span>
+                <select class="select" [(ngModel)]="translateLang">
+                  @for (lang of translateLangs; track lang.code) {
+                    <option [ngValue]="lang.code">{{ lang.label }}</option>
+                  }
+                </select>
+              </label>
+              <div class="field">
+                <span class="field-label">Qué esperar</span>
+                <p class="text-sm text-ink-soft m-0">
+                  El texto se traduce con un modelo de lenguaje local y se
+                  reescribe en su misma posición, conservando imágenes y tablas.
+                  Si la traducción es más larga que el original, la letra se
+                  reduce para que quepa.
+                </p>
+                <p class="text-sm text-ink-soft mt-2 mb-0">
+                  Los PDFs protegidos con contraseña o escaneados (sin texto) no
+                  se pueden traducir. La traducción puede tardar varios minutos
+                  según el número de páginas.
+                </p>
+              </div>
+            }
+
+            @case ('convert') {
+              <div class="field">
+                <span class="field-label">Formatos aceptados</span>
+                <p class="text-sm text-ink-soft m-0">
+                  Word (.doc, .docx), Excel (.xls, .xlsx), PowerPoint (.ppt, .pptx),
+                  OpenDocument (.odt, .ods, .odp), texto (.txt, .rtf) e imágenes (.jpg, .png).
+                </p>
+                <p class="text-sm text-ink-soft mt-2 mb-0">
+                  El documento se convierte en el servidor tal como lo mostraría
+                  Microsoft Office; las macros nunca se ejecutan.
+                </p>
+              </div>
+            }
+          }
+
+          <label class="field">
+            <span class="field-label">Nombre del resultado (opcional)</span>
+            <input class="input" [(ngModel)]="outputName" maxlength="100" placeholder="p. ej. contrato_final">
+          </label>
+        </div>
+
+        @if (!wideLayout()) {
+          <div class="mt-6 flex justify-end">
+            <button class="btn-cta" [disabled]="isProcessing()" (click)="runCurrent()">
+              @if (isProcessing()) {
+                Procesando…
+              } @else {
+                {{ t.cta }}
+              }
+            </button>
+          </div>
+        }
+      </div>
+    }
+
+    <!-- Resultado -->
+    @if (currentJob(); as job) {
+      <div class="sheet p-6 mt-6" role="status">
+        @if (job.status === 'pending' || job.status === 'processing') {
+          <mat-progress-bar mode="indeterminate"></mat-progress-bar>
+          <p class="mt-3 text-center text-ink-soft m-0">Procesando tu documento…</p>
+        }
+        @if (job.status === 'completed') {
+          <div class="text-center">
+            <span class="material-icons done-icon">task_alt</span>
+            <p class="font-medium text-lg mt-2 mb-1">Listo: {{ job.outputFilename }}</p>
+            <p class="text-sm text-ink-soft mono mt-0 mb-4">{{ formatSize(job.compressedSize || 0) }}</p>
+            <button class="btn-cta" (click)="download()">
+              <span class="material-icons">download</span>
+              Descargar resultado
+            </button>
+          </div>
+        }
+        @if (job.status === 'failed') {
+          <div class="error-box">
+            <span class="material-icons">error_outline</span>
+            <div>
+              <p class="font-medium m-0">No se pudo completar la operación</p>
+              <p class="text-sm m-0 mt-1">{{ job.errorMessage }}</p>
+            </div>
+          </div>
+        }
+      </div>
+    }
+  </div>
+}

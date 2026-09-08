@@ -1,7 +1,7 @@
 import { Entity, PrimaryColumn, Column, CreateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
 import { CompressionJob } from './job.model';
 
-export type FileType = 'original' | 'compressed';
+export type FileType = 'original' | 'compressed' | 'output';
 
 @Entity('files')
 export class File {
@@ -11,7 +11,7 @@ export class File {
   @Column({ name: 'job_id', type: 'varchar', length: 36 })
   jobId!: string;
 
-  @Column({ name: 'file_type', type: 'enum', enum: ['original', 'compressed'] })
+  @Column({ name: 'file_type', type: 'enum', enum: ['original', 'compressed', 'output'] })
   fileType!: FileType;
 
   @Column({ type: 'varchar', length: 255 })

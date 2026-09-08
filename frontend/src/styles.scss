@@ -1,31 +1,383 @@
+@use '@angular/material' as mat;
+
+// Fuentes self-hosted (QA no tiene salida a internet: nada de CDNs)
+@import '@fontsource-variable/bricolage-grotesque';
+@import '@fontsource-variable/inter';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import 'material-icons/iconfont/material-icons.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-@use '@angular/material' as mat;
-
 @include mat.core();
 
-$primary: mat.define-palette(mat.$indigo-palette);
-$accent: mat.define-palette(mat.$pink-palette, A200, A100, A400);
+// ---------------------------------------------------------------------------
+// Tokens ComprePDF — papel blanco, tinta navy, acento cobalto
+// ---------------------------------------------------------------------------
+:root {
+  --ink: #12233f;
+  --ink-soft: #51617d;
+  --paper: #ffffff;
+  --mist: #f4f7fb;
+  --line: #e3e9f2;
+  --cobalt: #2e5bff;
+  --cobalt-deep: #1e46e0;
+  --cobalt-soft: #eaefff;
+  --ok: #059669;
+  --ok-soft: #e7f6f0;
+  --danger: #dc2626;
+  --danger-soft: #fdecec;
+  --radius: 14px;
+  --shadow-card: 0 1px 2px rgba(18, 35, 63, 0.05), 0 8px 24px -12px rgba(18, 35, 63, 0.18);
+  --shadow-lift: 0 2px 4px rgba(18, 35, 63, 0.06), 0 16px 32px -12px rgba(46, 91, 255, 0.25);
+}
+
+// Paleta Material derivada del cobalto
+$cobalt-palette: (
+  50: #eaefff,
+  100: #cbd8ff,
+  200: #a8bdff,
+  300: #84a1ff,
+  400: #598aff,
+  500: #2e5bff,
+  600: #2851f2,
+  700: #1e46e0,
+  800: #163ccd,
+  900: #0a2aae,
+  contrast: (
+    50: #12233f,
+    100: #12233f,
+    200: #12233f,
+    300: #12233f,
+    400: #ffffff,
+    500: #ffffff,
+    600: #ffffff,
+    700: #ffffff,
+    800: #ffffff,
+    900: #ffffff,
+  )
+);
+
+$primary: mat.define-palette($cobalt-palette, 500, 300, 700);
+$accent: mat.define-palette($cobalt-palette, 700, 400, 900);
 
 $theme: mat.define-light-theme((
   color: (
     primary: $primary,
     accent: $accent,
-  )
+  ),
+  typography: mat.define-typography-config(
+    $font-family: '"Inter Variable", system-ui, sans-serif',
+  ),
 ));
 
 @include mat.all-component-themes($theme);
 
+// ---------------------------------------------------------------------------
+// Base
+// ---------------------------------------------------------------------------
 html, body {
   height: 100%;
   margin: 0;
-  font-family: Roboto, "Helvetica Neue", sans-serif;
+}
+
+body {
+  font-family: 'Inter Variable', system-ui, sans-serif;
+  color: var(--ink);
+  background-color: var(--paper);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, .display {
+  font-family: 'Bricolage Grotesque Variable', 'Inter Variable', sans-serif;
+  letter-spacing: -0.02em;
+}
+
+code, .mono, .data {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
 }
 
 .container {
-  max-width: 1200px;
+  max-width: 1120px;
   margin: 0 auto;
-  padding: 0 1rem;
+  padding: 0 1.5rem;
+}
+
+// ---------------------------------------------------------------------------
+// Componentes compartidos del rediseño
+// ---------------------------------------------------------------------------
+
+// Eyebrow: etiqueta pequeña sobre títulos
+.eyebrow {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--cobalt);
+}
+
+// Hoja de papel con esquina doblada — la firma visual de ComprePDF.
+// El doblez es un pseudo-elemento; crece un poco al hover.
+.sheet {
+  position: relative;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 22px;
+    height: 22px;
+    background: linear-gradient(225deg, var(--mist) 0%, var(--mist) 49%, var(--line) 50%, #d7dfeb 100%);
+    border-bottom-left-radius: 8px;
+    clip-path: polygon(0 0, 100% 100%, 0 100%);
+    transform: rotate(180deg);
+    transition: width 0.25s ease, height 0.25s ease;
+  }
+}
+
+a.sheet, button.sheet {
+  cursor: pointer;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+
+  &:hover, &:focus-visible {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-lift);
+    border-color: var(--cobalt);
+
+    &::after {
+      width: 34px;
+      height: 34px;
+    }
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--cobalt);
+    outline-offset: 2px;
+  }
+}
+
+// Chip de ícono por herramienta (cada una con su matiz)
+.tool-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  flex-shrink: 0;
+
+  .material-icons {
+    font-size: 26px;
+  }
+}
+
+// Botón primario del rediseño
+.btn-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.75rem;
+  border: none;
+  border-radius: 10px;
+  background: var(--cobalt);
+  color: #fff;
+  font-family: 'Inter Variable', sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.15s ease;
+
+  &:hover:not(:disabled) {
+    background: var(--cobalt-deep);
+  }
+
+  &:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+
+  &:disabled {
+    background: var(--line);
+    color: var(--ink-soft);
+    cursor: not-allowed;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
+}
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.7rem 1.5rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--ink);
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease;
+
+  &:hover {
+    border-color: var(--cobalt);
+    color: var(--cobalt);
+  }
+}
+
+// Zona de arrastre de archivos
+.dropzone {
+  display: block;
+  border: 2px dashed var(--line);
+  border-radius: var(--radius);
+  background: var(--mist);
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease;
+
+  &:hover, &.dragging {
+    border-color: var(--cobalt);
+    background: var(--cobalt-soft);
+  }
+
+  .material-icons {
+    font-size: 44px;
+    color: var(--cobalt);
+  }
+}
+
+// Fila de archivo seleccionado
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.65rem 0.9rem;
+  background: var(--mist);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+
+  .material-icons {
+    color: var(--cobalt);
+    font-size: 20px;
+  }
+
+  .size {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.8rem;
+    color: var(--ink-soft);
+  }
+}
+
+// Controles de formulario propios (evitan las rarezas del outline de MDC)
+.field {
+  display: block;
+  margin-bottom: 1rem;
+
+  .field-label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--ink);
+    margin-bottom: 0.4rem;
+  }
+}
+
+.input, .select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: 'Inter Variable', system-ui, sans-serif;
+  font-size: 0.95rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+
+  &::placeholder {
+    color: #9aa7ba;
+  }
+
+  &:hover {
+    border-color: #c3cede;
+  }
+
+  &:focus {
+    outline: none;
+    border-color: var(--cobalt);
+    box-shadow: 0 0 0 3px var(--cobalt-soft);
+  }
+
+  &.mono {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.9rem;
+  }
+}
+
+.select {
+  appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='%2351617d'><path d='M7 10l5 5 5-5z'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 0.7rem center;
+  padding-right: 2.2rem;
+  cursor: pointer;
+}
+
+.radio-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.35rem 0;
+  cursor: pointer;
+  color: var(--ink);
+
+  input[type='radio'] {
+    accent-color: var(--cobalt);
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+  }
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+
+  .material-icons {
+    font-size: 20px;
+  }
+
+  &:hover {
+    background: rgba(18, 35, 63, 0.07);
+    color: var(--ink);
+  }
+}
+
+// Respeto a usuarios con animaciones reducidas
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001s !important;
+    transition-duration: 0.001s !important;
+  }
 }

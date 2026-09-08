@@ -1,0 +1,143 @@
+<div class="editor-toolbar">
+  <a class="back-link" routerLink="/">← Inicio</a>
+  <div class="doc-status" aria-live="polite">
+    <span class="status-dot" [class.busy]="busy"></span>{{ statusMessage || (file ? file.name : 'Editor de PDF') }}
+  </div>
+  <div class="toolbar-actions">
+    @if (doc) {
+      <a class="btn secondary" routerLink="/estudio">Abrir en el Estudio</a>
+      <button class="btn primary" type="button" (click)="apply()" [disabled]="busy || !elements.length">
+        Aplicar y descargar
+      </button>
+    }
+  </div>
+</div>
+
+@if (errorMessage) {
+  <div class="alert" role="alert">{{ errorMessage }}</div>
+}
+
+@if (!doc) {
+  <!-- Estado inicial: subir un PDF -->
+  <div class="dropzone"
+       (dragover)="$event.preventDefault()"
+       (drop)="onDrop($event)">
+    <div class="dropzone-inner">
+      <p class="eyebrow">Editor de PDF</p>
+      <h1>Sube un PDF para empezar a editar</h1>
+      <p>Añade texto o imágenes, o tapa lo que quieras cambiar. Todo se aplica sobre el documento y se descarga aplanado.</p>
+      <label class="btn primary file-btn">
+        <input type="file" accept="application/pdf" (change)="onFile($event)" hidden />
+        Elegir PDF
+      </label>
+      <span class="hint">…o arrastra el archivo aquí.</span>
+      <p class="hint">
+        ¿Necesitas además reordenar páginas, firmar o comprimir sin descargar entre pasos?
+        <a routerLink="/estudio">Usa el Estudio</a>.
+      </p>
+    </div>
+  </div>
+} @else {
+  <main class="workspace">
+    <!-- Panel izquierdo: herramientas + navegación -->
+    <aside class="panel tools-panel">
+      <div class="panel-heading"><p class="eyebrow">Herramientas</p><h2>Añadir</h2></div>
+      <div class="tool-grid">
+        <button type="button" (click)="addText()"><span>T</span> Texto</button>
+        <label class="tool-file">
+          <input type="file" accept="image/png,image/jpeg" (change)="onImage($event)" hidden />
+          <span>▣</span> Imagen
+        </label>
+        <button type="button" (click)="addWhiteout()"><span>▭</span> Tapar</button>
+      </div>
+
+      <div class="section-divider"></div>
+      <p class="section-label">Marcado</p>
+      <div class="tool-grid">
+        <button type="button" (click)="addHighlight()"><span class="sw-highlight">A</span> Resaltar</button>
+        <button type="button" (click)="addUnderline()"><span class="sw-underline">A</span> Subrayar</button>
+        <button type="button" (click)="addStrikeout()"><span class="sw-strike">A</span> Tachar</button>
+      </div>
+
+      <div class="section-divider"></div>
+      <p class="section-label">Formas</p>
+      <div class="tool-grid cols-2">
+        <button type="button" (click)="addLine()"><span>╱</span> Línea</button>
+        <button type="button" (click)="addArrow()"><span>↗</span> Flecha</button>
+        <button type="button" (click)="addRect()"><span>▭</span> Recuadro</button>
+        <button type="button" (click)="addEllipse()"><span>◯</span> Círculo</button>
+      </div>
+
+      <div class="section-divider"></div>
+      <p class="section-label">Marcas rápidas</p>
+      <div class="tool-grid cols-3">
+        <button type="button" title="Marca de verificación" (click)="addMark('check')"><span class="mk-check">✓</span></button>
+        <button type="button" title="Marca de cruz" (click)="addMark('cross')"><span class="mk-cross">✗</span></button>
+        <button type="button" title="Punto" (click)="addMark('dot')"><span>●</span></button>
+      </div>
+
+      <div class="section-divider"></div>
+      <p class="section-label">Dibujo</p>
+      <div class="tool-grid cols-2">
+        <button type="button" [class.tool-active]="mode === 'draw'" (click)="toggleMode('draw')">
+          <span>✎</span> Dibujo libre
+        </button>
+        <button type="button" [class.tool-active]="mode === 'poly'" (click)="toggleMode('poly')">
+          <span>⬠</span> Polígono
+        </button>
+        <button type="button" (click)="addCloud()"><span>☁</span> Nube</button>
+        <button type="button" (click)="addCallout()"><span>💬</span> Llamada</button>
+      </div>
+      @if (mode === 'draw') {
+        <p class="panel-hint">Traza sobre la página; cada trazo es un elemento. Vuelve a pulsar para salir.</p>
+      }
+      @if (mode === 'poly') {
+        <p class="panel-hint">Haz clic para poner vértices y doble clic (o Terminar) para cerrar.</p>
+        <button class="btn secondary full" type="button" (click)="finishPolygon()"
+                [disabled]="polyDraftLength < 3">Terminar polígono</button>
+      }
+
+      <div class="section-divider"></div>
+      <p class="section-label">Sellos</p>
+      <div class="tool-grid cols-2">
+        @for (preset of stampPresets; track preset) {
+          <button type="button" class="stamp-btn" (click)="addStamp(preset)">{{ preset }}</button>
+        }
+      </div>
+
+      <div class="section-divider"></div>
+      <p class="section-label">Página</p>
+      <div class="page-nav">
+        <button type="button" (click)="goToPage(currentPage - 1)" [disabled]="currentPage <= 1">‹</button>
+        <span class="mono">{{ currentPage }} / {{ pageCount }}</span>
+        <button type="button" (click)="goToPage(currentPage + 1)" [disabled]="currentPage >= pageCount">›</button>
+      </div>
+      <p class="panel-hint">{{ elementsOnPage.length }} elemento(s) en esta página · {{ elements.length }} en total.</p>
+
+      <div class="section-divider"></div>
+      <label class="btn secondary full file-btn">
+        <input type="file" accept="application/pdf" (change)="onFile($event)" hidden />
+        Cambiar PDF
+      </label>
+    </aside>
+
+    <!-- Centro: página con los elementos superpuestos (lienzo compartido) -->
+    <section class="canvas-column">
+      <app-pdf-markup-canvas
+        [doc]="doc"
+        [page]="currentPage"
+        [elements]="elements"
+        [selectedId]="selectedId"
+        [mode]="mode"
+        (selectedIdChange)="selectedId = $event"
+        (elementsChange)="onElementsChange($event)"
+        (pageAspectChange)="onPageAspect($event)"
+        (polygonFinished)="onPolygonFinished()" />
+    </section>
+
+    <!-- Panel derecho: propiedades del elemento seleccionado -->
+    <aside class="panel props-panel">
+      <app-markup-props [element]="selected" (remove)="remove($event)" />
+    </aside>
+  </main>
+}

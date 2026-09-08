@@ -1,0 +1,85 @@
+<section class="hero">
+  <div>
+    <p class="eyebrow">Mantenimiento</p>
+    <h1>Formularios PDF</h1>
+    <p class="subtitle">Crea, modifica y genera formularios PDF rellenables.</p>
+  </div>
+  <div class="hero-actions">
+    <div class="summary-card">
+      <strong>{{ forms.length }}</strong>
+      <span>{{ forms.length === 1 ? 'formulario guardado' : 'formularios guardados' }}</span>
+    </div>
+    <a class="primary-button" routerLink="/formularios/nuevo">+ Nuevo formulario</a>
+  </div>
+</section>
+
+<section class="content-card">
+  <div class="list-toolbar">
+    <label class="search-field">
+      <span>Buscar</span>
+      <input type="search" [(ngModel)]="search" placeholder="Nombre del formulario" aria-label="Buscar formularios" />
+    </label>
+    <button class="refresh-button" type="button" (click)="loadForms()" [disabled]="loading">Actualizar</button>
+  </div>
+
+  @if (errorMessage) {
+    <div class="alert" role="alert">{{ errorMessage }}</div>
+  }
+
+  @if (loading) {
+    <div class="state-box" aria-live="polite">
+      <span class="loader"></span>
+      <strong>Cargando formularios…</strong>
+    </div>
+  } @else if (filteredForms.length === 0 && search) {
+    <div class="state-box">
+      <strong>No encontramos coincidencias</strong>
+      <span>Prueba con otro nombre.</span>
+    </div>
+  } @else if (forms.length === 0) {
+    <div class="state-box empty-state">
+      <span class="empty-icon">+</span>
+      <strong>Crea tu primer formulario</strong>
+      <span>Configura el encabezado, las preguntas y el PDF desde el editor.</span>
+      <a class="primary-button" routerLink="/formularios/nuevo">Nuevo formulario</a>
+    </div>
+  } @else {
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Formulario</th>
+            <th>Preguntas</th>
+            <th>Última modificación</th>
+            <th><span class="sr-only">Acciones</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (form of filteredForms; track form.id) {
+            <tr>
+              <td>
+                <a class="form-name" [routerLink]="['/formularios', form.id, 'editar']">
+                  <span class="document-icon">PDF</span>
+                  <span><strong>{{ form.name }}</strong><small>ID {{ form.id.slice(0, 8) }}</small></span>
+                </a>
+              </td>
+              <td><span class="question-count">{{ form.questionCount }}</span></td>
+              <td class="date-cell">{{ formatDate(form.updatedAt) }}</td>
+              <td>
+                <div class="row-actions">
+                  <a class="action-button edit" [routerLink]="['/formularios', form.id, 'editar']">Editar</a>
+                  <button type="button" (click)="downloadForm(form)" [disabled]="actionId === form.id">
+                    {{ actionId === form.id ? '…' : 'PDF' }}
+                  </button>
+                  <button class="danger" type="button" (click)="deleteForm(form)" [disabled]="actionId === form.id">
+                    Eliminar
+                  </button>
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</section>

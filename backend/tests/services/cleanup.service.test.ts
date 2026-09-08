@@ -1,6 +1,7 @@
 import { CleanupService } from '../../src/services/cleanup.service';
 import { AppDataSource } from '../../src/config/database';
 import { File } from '../../src/models/file.model';
+import { CompressionJob } from '../../src/models/job.model';
 import fs from 'fs/promises';
 
 jest.mock('../../src/config/database');
@@ -9,6 +10,9 @@ jest.mock('fs/promises');
 describe('CleanupService', () => {
   let cleanupService: CleanupService;
   let mockFileRepo: any;
+  let mockJobRepo: any;
+  /** Ids que devuelve la búsqueda de pasos intermedios superados. */
+  let supersededIds: { id: string }[];
 
   beforeEach(() => {
     cleanupService = new CleanupService();
@@ -18,7 +22,26 @@ describe('CleanupService', () => {
       findOne: jest.fn(),
     };
 
-    (AppDataSource.getRepository as jest.Mock) = jest.fn().mockReturnValue(mockFileRepo);
+    supersededIds = [];
+    // El query builder de `cleanIntermediateJobs` encadena where/andWhere y
+    // termina en getRawMany; basta con que cada eslabón se devuelva a sí mismo.
+    const qb: any = {
+      select: jest.fn(() => qb),
+      addSelect: jest.fn(() => qb),
+      where: jest.fn(() => qb),
+      andWhere: jest.fn(() => qb),
+      getRawMany: jest.fn(async () => supersededIds),
+    };
+    mockJobRepo = {
+      createQueryBuilder: jest.fn(() => qb),
+      delete: jest.fn(),
+    };
+
+    (AppDataSource.getRepository as jest.Mock) = jest
+      .fn()
+      .mockImplementation((entity: unknown) =>
+        entity === CompressionJob ? mockJobRepo : mockFileRepo,
+      );
   });
 
   afterEach(() => {
@@ -43,6 +66,7 @@ describe('CleanupService', () => {
 
       mockFileRepo.find.mockResolvedValue(expiredFiles);
       (fs.unlink as jest.Mock).mockResolvedValue(undefined);
+      (fs.readdir as jest.Mock).mockResolvedValue([]);
 
       await cleanupService.cleanup();
 
@@ -62,12 +86,57 @@ describe('CleanupService', () => {
 
       mockFileRepo.find.mockResolvedValue(expiredFiles);
       (fs.unlink as jest.Mock).mockRejectedValue(new Error('File not found'));
+      (fs.readdir as jest.Mock).mockResolvedValue([]);
 
       await cleanupService.cleanup();
 
       expect(mockFileRepo.find).toHaveBeenCalled();
       expect(fs.unlink).toHaveBeenCalled();
       // Should not throw error
+    });
+  });
+
+  // Purga de pasos intermedios del Estudio (jobs de sesión ya superados).
+  describe('cleanIntermediateJobs', () => {
+    beforeEach(() => {
+      mockFileRepo.find.mockResolvedValue([]);
+      (fs.unlink as jest.Mock).mockResolvedValue(undefined);
+      (fs.readdir as jest.Mock).mockResolvedValue([]);
+    });
+
+    it('borra los archivos y la fila de cada paso superado', async () => {
+      supersededIds = [{ id: 'step-1' }, { id: 'step-2' }];
+      mockFileRepo.find
+        .mockResolvedValueOnce([])                                       // expirados
+        .mockResolvedValueOnce([{ filePath: '/uploads/in-1.pdf' }])      // archivos de step-1
+        .mockResolvedValueOnce([{ filePath: '/outputs/out-2.pdf' }]);    // archivos de step-2
+
+      await cleanupService.cleanup();
+
+      expect(fs.unlink).toHaveBeenCalledWith('/uploads/in-1.pdf');
+      expect(fs.unlink).toHaveBeenCalledWith('/outputs/out-2.pdf');
+      expect(mockJobRepo.delete).toHaveBeenCalledWith('step-1');
+      expect(mockJobRepo.delete).toHaveBeenCalledWith('step-2');
+    });
+
+    it('no borra nada cuando ningún paso tiene sucesor', async () => {
+      supersededIds = [];
+
+      await cleanupService.cleanup();
+
+      expect(mockJobRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it('sigue borrando la fila aunque el archivo ya no esté en disco', async () => {
+      supersededIds = [{ id: 'step-1' }];
+      mockFileRepo.find
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ filePath: '/uploads/desaparecido.pdf' }]);
+      (fs.unlink as jest.Mock).mockRejectedValue(new Error('ENOENT'));
+
+      await cleanupService.cleanup();
+
+      expect(mockJobRepo.delete).toHaveBeenCalledWith('step-1');
     });
   });
 

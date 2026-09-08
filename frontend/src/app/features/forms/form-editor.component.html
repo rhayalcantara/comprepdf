@@ -1,0 +1,326 @@
+<div class="editor-toolbar">
+  <a class="back-link" routerLink="/formularios">← Formularios</a>
+  <div class="doc-status" aria-live="polite">
+    <span class="status-dot" [class.busy]="busy"></span>{{ statusMessage }}
+  </div>
+  <div class="toolbar-actions">
+    <button class="btn secondary" type="button" (click)="generatePreview()" [disabled]="busy">
+      Vista previa PDF
+    </button>
+    <button class="btn secondary" type="button" (click)="save()" [disabled]="busy">
+      Guardar borrador
+    </button>
+    <button class="btn primary" type="button" (click)="downloadPdf()" [disabled]="busy">
+      Descargar PDF
+    </button>
+  </div>
+</div>
+
+<main class="workspace">
+  <!-- Panel izquierdo: configuración del documento -->
+  <aside class="panel settings-panel">
+    <div class="panel-heading">
+      <p class="eyebrow">Documento</p>
+      <h2>Configuración</h2>
+    </div>
+
+    <label class="field">
+      <span>Nombre interno</span>
+      <input [(ngModel)]="definition.name" (ngModelChange)="markChanged()" />
+    </label>
+    <label class="field">
+      <span>Tamaño de página</span>
+      <select [(ngModel)]="definition.page_size" (ngModelChange)="markChanged()">
+        <option value="letter">Letter</option>
+        <option value="a4">A4</option>
+      </select>
+    </label>
+
+    <div class="section-divider"></div>
+    <p class="section-label">Encabezado</p>
+    <label class="field">
+      <span>Título visible</span>
+      <input [(ngModel)]="definition.header.title" (ngModelChange)="markChanged()" />
+    </label>
+    <label class="field">
+      <span>Texto secundario</span>
+      <textarea rows="3" [(ngModel)]="definition.header.subtitle" (ngModelChange)="markChanged()"></textarea>
+    </label>
+    <div class="field">
+      <span>Logo</span>
+      @if (definition.header.logo) {
+        <div class="image-slot">
+          <img [src]="definition.header.logo" alt="Logo del formulario" />
+          <button type="button" class="icon-button danger" title="Quitar logo" (click)="removeLogo()">×</button>
+        </div>
+      } @else {
+        <label class="file-drop">
+          <input type="file" accept="image/png,image/jpeg" (change)="pickLogo($event)" />
+          <span>+ Subir logo</span>
+        </label>
+        <small>PNG o JPEG. Aparece arriba a la derecha, en todas las páginas.</small>
+      }
+    </div>
+
+    <div class="section-divider"></div>
+    <p class="section-label">Pie de página</p>
+    <label class="field">
+      <span>Texto</span>
+      <input [(ngModel)]="definition.footer.text" (ngModelChange)="markChanged()" />
+    </label>
+    <label class="check-row">
+      <input type="checkbox" [(ngModel)]="definition.footer.show_page_numbers" (ngModelChange)="markChanged()" />
+      Mostrar número de página
+    </label>
+
+    <div class="section-divider"></div>
+    <p class="section-label">Agregar pregunta a «{{ activeSectionTitle }}»</p>
+    <div class="question-type-grid">
+      @for (type of questionTypes; track type.value) {
+        <button type="button" (click)="addQuestion(type.value)">
+          <span class="type-icon">+</span>{{ type.label }}
+        </button>
+      }
+    </div>
+
+    <div class="section-divider"></div>
+    <button class="btn secondary full" type="button" (click)="addSection()">+ Agregar sección</button>
+  </aside>
+
+  <!-- Centro: lienzo con la maqueta del formulario -->
+  <section class="canvas-column">
+    @if (errorMessage) {
+      <div class="alert" role="alert">{{ errorMessage }}</div>
+    }
+
+    <div class="canvas-toolbar">
+      <div>
+        <p class="eyebrow">Composición</p>
+        <h1>{{ definition.name }}</h1>
+      </div>
+      <span>{{ allQuestions.length }} preguntas · {{ definition.sections.length }} secciones</span>
+    </div>
+
+    <article class="paper" [class.a4]="definition.page_size === 'a4'">
+      <header class="paper-header">
+        <div class="paper-header-text">
+          <p class="paper-kicker">Formulario</p>
+          <h2>{{ definition.header.title || 'Título del formulario' }}</h2>
+          <p>{{ definition.header.subtitle }}</p>
+        </div>
+        @if (definition.header.logo) {
+          <img class="paper-logo" [src]="definition.header.logo" alt="Logo" />
+        }
+      </header>
+
+      <!-- cdkDropListGroup conecta las listas solas: gestionar connectedTo con
+           ids se rompe al añadir o borrar secciones. -->
+      <div class="paper-body" cdkDropListGroup>
+        @for (section of definition.sections; track section.id; let sectionIndex = $index) {
+          <section
+            class="paper-section"
+            [class.active]="activeSectionId === section.id"
+            (click)="activeSectionId = section.id"
+          >
+            <div class="section-toolbar">
+              <input
+                class="section-title-input"
+                [(ngModel)]="section.title"
+                (ngModelChange)="markChanged()"
+                placeholder="Sección sin título"
+                aria-label="Título de la sección"
+              />
+              <select
+                class="section-columns"
+                [ngModel]="section.columns"
+                (ngModelChange)="setColumns(section, $event)"
+                aria-label="Columnas de la sección"
+              >
+                @for (columns of columnOptions; track columns) {
+                  <option [ngValue]="columns">{{ columns }} {{ columns === 1 ? 'columna' : 'columnas' }}</option>
+                }
+              </select>
+              <label class="check-row inline" title="Empezar esta sección en una página nueva">
+                <input type="checkbox" [(ngModel)]="section.page_break" (ngModelChange)="markChanged()" />
+                Página nueva
+              </label>
+              <button
+                class="icon-button danger"
+                type="button"
+                title="Eliminar sección"
+                [disabled]="definition.sections.length <= 1"
+                (click)="removeSection(section)"
+              >×</button>
+            </div>
+
+            @if (section.page_break && sectionIndex > 0) {
+              <p class="page-break-hint">Empieza en una página nueva</p>
+            }
+
+            <div
+              class="section-questions"
+              cdkDropList
+              cdkDropListSortingDisabled
+              [cdkDropListData]="section.questions"
+              (cdkDropListDropped)="drop($event)"
+              [style.grid-template-columns]="'repeat(' + section.columns + ', minmax(0, 1fr))'"
+            >
+              @for (question of section.questions; track question.id) {
+                <button
+                  class="question-card"
+                  type="button"
+                  cdkDrag
+                  [class.selected]="selectedQuestionId === question.id"
+                  [style.grid-column]="'span ' + question.column_span"
+                  (click)="selectQuestion(question)"
+                >
+                  <span class="drag-handle" cdkDragHandle title="Arrastrar">⠿</span>
+                  <span class="question-content">
+                    <!-- Espejo del PDF: el icono va a la izquierda y la etiqueta
+                         con su ayuda se sangran a su derecha. -->
+                    <span class="question-head">
+                      @if (question.icon) {
+                        <img class="question-icon" [src]="question.icon" alt="" />
+                      }
+                      <span class="question-head-text">
+                        <span class="question-label">
+                          {{ question.label }}
+                          @if (question.required) { <em>*</em> }
+                        </span>
+                        @if (question.help_text) { <small>{{ question.help_text }}</small> }
+                      </span>
+                    </span>
+                    @switch (question.type) {
+                      @case ('long_text') { <span class="mock-input tall"></span> }
+                      @case ('checkbox') { <span class="mock-choice"><i></i>Sí</span> }
+                      @case ('radio') {
+                        <span class="mock-options">
+                          @for (option of question.options; track option) {
+                            <span class="mock-choice"><i class="radio"></i>{{ option }}</span>
+                          }
+                        </span>
+                      }
+                      @case ('select') { <span class="mock-input">Seleccione una opción <b>⌄</b></span> }
+                      @default { <span class="mock-input"></span> }
+                    }
+                  </span>
+                </button>
+              } @empty {
+                <p class="section-empty">Sección vacía · arrastra preguntas aquí o agrégalas desde el panel.</p>
+              }
+            </div>
+          </section>
+        }
+
+        @if (!allQuestions.length) {
+          <div class="empty-state">
+            <strong>El formulario está vacío</strong>
+            <span>Agrega una pregunta desde el panel izquierdo.</span>
+          </div>
+        }
+      </div>
+
+      <footer class="paper-footer">
+        <span>{{ definition.footer.text }}</span>
+        @if (definition.footer.show_page_numbers) { <span>Página 1</span> }
+      </footer>
+    </article>
+  </section>
+
+  <!-- Panel derecho: propiedades de la pregunta + PDF generado -->
+  <aside class="panel properties-panel">
+    @if (selectedQuestion; as question) {
+      <div class="panel-heading properties-heading">
+        <div>
+          <p class="eyebrow">Campo seleccionado</p>
+          <h2>Propiedades</h2>
+        </div>
+        <button class="icon-button danger" type="button" title="Eliminar" (click)="removeQuestion(question)">×</button>
+      </div>
+
+      <label class="field">
+        <span>Pregunta</span>
+        <textarea rows="3" [(ngModel)]="question.label" (ngModelChange)="markChanged()"></textarea>
+      </label>
+      <label class="field">
+        <span>Nombre interno</span>
+        <input [(ngModel)]="question.name" (ngModelChange)="markChanged()" />
+        <small>Se usa como identificador dentro del PDF.</small>
+      </label>
+      <label class="field">
+        <span>Tipo de respuesta</span>
+        <select [(ngModel)]="question.type" (ngModelChange)="changeQuestionType(question)">
+          @for (type of questionTypes; track type.value) {
+            <option [value]="type.value">{{ type.label }}</option>
+          }
+        </select>
+      </label>
+      <label class="field">
+        <span>Texto de ayuda</span>
+        <input [(ngModel)]="question.help_text" (ngModelChange)="markChanged()" placeholder="Opcional" />
+      </label>
+      <div class="field">
+        <span>Icono</span>
+        @if (question.icon) {
+          <div class="image-slot icon-slot">
+            <img [src]="question.icon" alt="Icono de la pregunta" />
+            <button type="button" class="icon-button danger" title="Quitar icono" (click)="removeIcon(question)">×</button>
+          </div>
+        } @else {
+          <label class="file-drop">
+            <input type="file" accept="image/png,image/jpeg" (change)="pickIcon($event, question)" />
+            <span>+ Subir icono</span>
+          </label>
+          <small>Se muestra junto a la pregunta, en pequeño.</small>
+        }
+      </div>
+      @if (question.type === 'radio' || question.type === 'select') {
+        <label class="field">
+          <span>Opciones</span>
+          <textarea
+            rows="4"
+            [ngModel]="question.options.join(', ')"
+            (ngModelChange)="updateOptions(question, $event)"
+          ></textarea>
+          <small>Separa cada opción con una coma.</small>
+        </label>
+      }
+      @if (spanOptions.length > 1) {
+        <label class="field">
+          <span>Ancho</span>
+          <select [(ngModel)]="question.column_span" (ngModelChange)="markChanged()">
+            @for (span of spanOptions; track span) {
+              <option [ngValue]="span">
+                {{ span === 1 ? '1 columna' : span + ' columnas' }}{{ span === selectedSection?.columns ? ' (todo el ancho)' : '' }}
+              </option>
+            }
+          </select>
+          <small>Cuántas columnas ocupa dentro de su sección.</small>
+        </label>
+      }
+      <label class="check-row required-row">
+        <input type="checkbox" [(ngModel)]="question.required" (ngModelChange)="markChanged()" />
+        Respuesta obligatoria
+      </label>
+      <div class="order-actions">
+        <button type="button" (click)="moveQuestion(question, -1)">↑ Subir</button>
+        <button type="button" (click)="moveQuestion(question, 1)">↓ Bajar</button>
+      </div>
+    } @else {
+      <div class="empty-properties">
+        <strong>Selecciona una pregunta</strong>
+        <span>Sus propiedades aparecerán aquí.</span>
+      </div>
+    }
+
+    @if (pdfUrl) {
+      <div class="pdf-preview">
+        <div class="pdf-preview-heading">
+          <strong>PDF generado</strong>
+          <button type="button" (click)="downloadPdf()">Descargar</button>
+        </div>
+        <iframe [src]="pdfUrl" title="Vista previa del formulario PDF"></iframe>
+      </div>
+    }
+  </aside>
+</main>

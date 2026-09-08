@@ -1,0 +1,268 @@
+<!-- Barra superior: documento abierto + estado -->
+<div class="studio-bar">
+  <a class="back-link" routerLink="/">← Inicio</a>
+  <div class="doc-status" aria-live="polite">
+    <span class="status-dot" [class.busy]="ws.busy()"></span>
+    {{ ws.statusMessage() || ws.fileName() || 'Estudio' }}
+  </div>
+  @if (ws.hasDocument()) {
+    <label class="btn secondary file-btn">
+      <input type="file" accept="application/pdf" (change)="onFile($event)" hidden />
+      Abrir otro
+    </label>
+  }
+</div>
+
+@if (ws.errorMessage()) {
+  <div class="alert" role="alert">{{ ws.errorMessage() }}</div>
+}
+
+@if (!ws.hasDocument()) {
+  <!-- Puerta de entrada: el documento primero, la función después -->
+  <div class="dropzone" (dragover)="$event.preventDefault()" (drop)="onDrop($event)">
+    <div class="dropzone-inner">
+      <p class="eyebrow">Estudio</p>
+      <h1>Abre un documento y trabájalo entero de una vez</h1>
+      <p>
+        Reordena páginas, gíralas, elimínalas, resalta, sella y firma sin descargar
+        nada en medio. Solo descargas al final, una vez.
+      </p>
+      <label class="btn primary file-btn">
+        <input type="file" accept="application/pdf" (change)="onFile($event)" hidden />
+        Abrir documento
+      </label>
+      <span class="hint">…o arrastra el PDF aquí.</span>
+    </div>
+  </div>
+} @else {
+  <!-- Cinta: grupos de herramientas sobre el documento abierto -->
+  <nav class="ribbon-groups">
+    <button type="button" [class.active]="group() === 'pages'" (click)="setGroup('pages')">Páginas</button>
+    <button type="button" [class.active]="group() === 'markup'" (click)="setGroup('markup')">Marcado</button>
+    <button type="button" [class.active]="group() === 'export'" (click)="setGroup('export')">Exportar</button>
+  </nav>
+
+  <div class="ribbon">
+    @switch (group()) {
+      @case ('pages') {
+        <button type="button" (click)="rotateCurrent()"><span>⟳</span> Girar esta página</button>
+        <button type="button" (click)="removeCurrent()"
+                [disabled]="ws.pages().length <= 1"><span>×</span> Eliminar esta página</button>
+        <span class="ribbon-hint">Arrastra las miniaturas del panel izquierdo para reordenar.</span>
+      }
+      @case ('markup') {
+        <button type="button" (click)="addText()"><span>T</span> Texto</button>
+        <label class="ribbon-file">
+          <input type="file" accept="image/png,image/jpeg" (change)="onImage($event)" hidden />
+          <span>▣</span> Imagen
+        </label>
+        <button type="button" (click)="addWhiteout()"><span>▭</span> Tapar</button>
+        <span class="ribbon-sep"></span>
+        <button type="button" (click)="addHighlight()"><span class="sw-highlight">A</span> Resaltar</button>
+        <button type="button" (click)="addUnderline()"><span class="sw-underline">A</span> Subrayar</button>
+        <button type="button" (click)="addStrikeout()"><span class="sw-strike">A</span> Tachar</button>
+        <span class="ribbon-sep"></span>
+        <button type="button" (click)="addLine()"><span>╱</span> Línea</button>
+        <button type="button" (click)="addArrow()"><span>↗</span> Flecha</button>
+        <button type="button" (click)="addRect()"><span>▭</span> Recuadro</button>
+        <button type="button" (click)="addEllipse()"><span>◯</span> Círculo</button>
+        <button type="button" (click)="addCloud()"><span>☁</span> Nube</button>
+        <button type="button" (click)="addCallout()"><span>💬</span> Llamada</button>
+        <span class="ribbon-sep"></span>
+        <button type="button" title="Marca de verificación" (click)="addMark('check')"><span class="mk-check">✓</span></button>
+        <button type="button" title="Marca de cruz" (click)="addMark('cross')"><span class="mk-cross">✗</span></button>
+        <button type="button" title="Punto" (click)="addMark('dot')"><span>●</span></button>
+        <span class="ribbon-sep"></span>
+        <button type="button" [class.active]="mode() === 'draw'" (click)="toggleMode('draw')"><span>✎</span> Dibujar</button>
+        <button type="button" [class.active]="mode() === 'poly'" (click)="toggleMode('poly')"><span>⬠</span> Polígono</button>
+        @if (mode() === 'poly') {
+          <button type="button" class="accent" (click)="finishPolygon()"
+                  [disabled]="polyDraftLength < 3">Terminar polígono</button>
+        }
+        <span class="ribbon-sep"></span>
+        @for (preset of stampPresets; track preset) {
+          <button type="button" class="stamp-btn" (click)="addStamp(preset)">{{ preset }}</button>
+        }
+      }
+      @case ('export') {
+        @for (action of exports; track action.id) {
+          <button type="button" [class.active]="openExport()?.id === action.id"
+                  (click)="toggleExport(action)">{{ action.label }}</button>
+        }
+      }
+    }
+  </div>
+
+  @if (mode() === 'draw') {
+    <p class="mode-hint">Traza sobre la página; cada trazo es un elemento. Vuelve a pulsar "Dibujar" para salir.</p>
+  }
+  @if (mode() === 'poly') {
+    <p class="mode-hint">Haz clic para poner vértices y doble clic (o "Terminar polígono") para cerrar.</p>
+  }
+
+  <!-- Diálogo de opciones de la exportación abierta -->
+  @if (openExport(); as action) {
+    <section class="export-dialog">
+      <div class="export-head">
+        <div>
+          <h3>{{ action.label }}</h3>
+          <p>{{ action.description }}</p>
+        </div>
+        <button class="icon-button" type="button" (click)="openExport.set(null)">×</button>
+      </div>
+
+      <div class="export-body">
+        @switch (action.id) {
+          @case ('compress') {
+            <label class="field">
+              <span>Nivel de compresión</span>
+              <select [(ngModel)]="compressionLevel">
+                <option value="low">Baja calidad · máximo ahorro (72 DPI)</option>
+                <option value="medium">Equilibrado (150 DPI)</option>
+                <option value="high">Alta calidad · menos ahorro (300 DPI)</option>
+              </select>
+            </label>
+          }
+          @case ('protect') {
+            <label class="field">
+              <span>Contraseña de apertura</span>
+              <input type="password" [(ngModel)]="protectPassword" placeholder="Obligatoria" />
+            </label>
+          }
+          @case ('split') {
+            <label class="field">
+              <span>Cómo dividir</span>
+              <select [(ngModel)]="splitMode">
+                <option value="individual">Una página por archivo</option>
+                <option value="ranges">Por rangos</option>
+              </select>
+            </label>
+            @if (splitMode === 'ranges') {
+              <label class="field">
+                <span>Rangos (separados por comas)</span>
+                <input [(ngModel)]="splitRanges" placeholder="1-3, 4-6" />
+              </label>
+            }
+          }
+          @case ('translate') {
+            <label class="field">
+              <span>Idioma destino</span>
+              <select [(ngModel)]="targetLang">
+                @for (lang of languages; track lang.code) {
+                  <option [value]="lang.code">{{ lang.label }}</option>
+                }
+              </select>
+            </label>
+          }
+        }
+      </div>
+
+      <div class="export-actions">
+        <button class="btn primary" type="button"
+                [disabled]="!canRunExport(action)"
+                (click)="runExport(action)">
+          {{ action.chainable ? 'Aplicar al documento' : 'Generar y descargar' }}
+        </button>
+      </div>
+    </section>
+  }
+
+  <!-- Tres paneles: páginas · lienzo · propiedades + cambios -->
+  <main class="studio">
+    <aside class="panel">
+      <app-pages-panel
+        [doc]="ws.doc()"
+        [pages]="ws.pages()"
+        [currentPage]="currentPage()"
+        (pageSelected)="goToPage($event)"
+        (reorder)="onReorder($event)"
+        (rotate)="onRotatePage($event)"
+        (remove)="onRemovePage($event)" />
+    </aside>
+
+    <section class="canvas-column">
+      @if (pendingRotation()) {
+        <!-- El giro se ve ya en la miniatura; en la página se aplica al guardar
+             (girar el lienzo desalinearía las marcas que se coloquen encima). -->
+        <p class="rotation-note">Esta página se girará {{ pendingRotation() }}° al aplicar los cambios.</p>
+      }
+      <!-- La navegación va ARRIBA, con el zoom: al pie quedaba bajo la barra
+           fija de guardado y había que adivinar alturas para esquivarla. -->
+      <div class="page-nav">
+        <button type="button" title="Página anterior"
+                (click)="goToPage(currentPage() - 1)" [disabled]="currentPage() <= 1">‹</button>
+        <span class="mono">{{ currentPage() }} / {{ ws.pages().length }}</span>
+        <button type="button" title="Página siguiente"
+                (click)="goToPage(currentPage() + 1)"
+                [disabled]="currentPage() >= ws.pages().length">›</button>
+      </div>
+      <app-pdf-markup-canvas
+        [doc]="ws.doc()"
+        [page]="canvasPage()"
+        [elements]="ws.elements()"
+        [selectedId]="selectedId()"
+        [mode]="mode()"
+        (selectedIdChange)="selectedId.set($event)"
+        (elementsChange)="onElementsChange($event)"
+        (pageAspectChange)="onPageAspect($event)"
+        (polygonFinished)="onPolygonFinished()" />
+    </section>
+
+    <aside class="panel side-right">
+      <app-markup-props [element]="selected()" (remove)="removeElement($event)" />
+
+      <div class="section-divider"></div>
+
+      <!-- Pila de cambios: la respuesta a "¿qué le he hecho al documento?" -->
+      <p class="section-label">Cambios</p>
+      @if (ws.pendingSummary().length) {
+        <ul class="change-list pending">
+          @for (change of ws.pendingSummary(); track change) {
+            <li>{{ change }}</li>
+          }
+        </ul>
+        <button class="btn secondary full" type="button"
+                (click)="ws.discardPending()" [disabled]="ws.busy()">Descartar pendientes</button>
+      } @else {
+        <p class="panel-hint">Sin cambios pendientes.</p>
+      }
+
+      @if (ws.appliedSteps().length) {
+        <div class="section-divider"></div>
+        <p class="section-label">Aplicado ({{ ws.appliedSteps().length }})</p>
+        <ol class="change-list applied">
+          @for (step of ws.appliedSteps(); track step.jobId) {
+            <li>{{ stepLabel(step) }}</li>
+          }
+        </ol>
+        <button class="btn secondary full" type="button"
+                (click)="undoStep()" [disabled]="ws.busy()">Deshacer el último</button>
+      }
+
+      <div class="section-divider"></div>
+      <label class="field">
+        <span>Nombre del archivo final</span>
+        <input [(ngModel)]="ws.outputName" placeholder="documento" />
+      </label>
+    </aside>
+  </main>
+
+  <!-- Única salida a disco de toda la sesión -->
+  <footer class="studio-foot">
+    <span class="foot-status">
+      @if (ws.hasPending()) {
+        {{ ws.pendingSummary().length }} cambio(s) sin aplicar
+      } @else if (ws.appliedSteps().length) {
+        {{ ws.appliedSteps().length }} operación(es) aplicada(s)
+      } @else {
+        Documento sin cambios
+      }
+    </span>
+    <div class="foot-actions">
+      <button class="btn secondary" type="button"
+              (click)="applyPending()" [disabled]="ws.busy() || !ws.hasPending()">Aplicar</button>
+      <button class="btn primary" type="button"
+              (click)="download()" [disabled]="!ws.canDownload()">Guardar y descargar</button>
+    </div>
+  </footer>
+}

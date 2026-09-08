@@ -1,0 +1,12 @@
+# Imagen de DESARROLLO del backend (hot-reload; el código se monta como volumen
+# desde docker-compose.dev.yml). Contexto = raíz del repo, igual que el Dockerfile
+# de producción, para que database/migrations quede disponible.
+FROM node:20-alpine
+WORKDIR /app
+COPY backend/package*.json ./
+RUN npm ci
+COPY backend/ ./
+COPY database/migrations ./database/migrations
+RUN mkdir -p uploads outputs
+EXPOSE 3000
+CMD ["npm", "run", "dev"]

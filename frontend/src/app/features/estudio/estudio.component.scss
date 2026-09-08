@@ -1,0 +1,160 @@
+:host { display: block; padding-bottom: 4.5rem; }
+
+// --- barra superior ---
+.studio-bar {
+  display: flex; align-items: center; gap: 1rem; padding: 0.75rem 0;
+}
+.back-link { color: var(--ink-soft); text-decoration: none; font-size: 0.9rem; }
+.doc-status { flex: 1; display: flex; align-items: center; gap: 0.5rem; color: var(--ink-soft); font-size: 0.9rem; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; }
+.status-dot.busy { background: #f59e0b; }
+
+.btn {
+  border: 1px solid var(--line); border-radius: 8px; padding: 0.5rem 0.9rem;
+  font: inherit; cursor: pointer; background: #fff; text-decoration: none; color: inherit;
+  display: inline-block; text-align: center;
+  &.primary { background: var(--cobalt); border-color: var(--cobalt); color: #fff; }
+  &.full { width: 100%; margin-top: 0.5rem; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+.file-btn { display: inline-block; }
+.icon-button { border: none; background: none; font-size: 1.2rem; cursor: pointer; color: var(--ink-soft); }
+
+.alert {
+  background: #fef2f2; border: 1px solid #fecaca; color: #b42318;
+  padding: 0.6rem 0.85rem; border-radius: 10px; margin-bottom: 1rem; font-size: 0.88rem;
+}
+
+// --- estado inicial ---
+.dropzone {
+  border: 1.5px dashed var(--line); border-radius: 14px; background: var(--mist);
+  padding: 3.5rem 1.5rem; text-align: center;
+}
+.dropzone-inner { max-width: 520px; margin: 0 auto; display: grid; gap: 0.6rem; justify-items: center; }
+.dropzone h1 { font-size: 1.45rem; color: #14213d; margin: 0; }
+.dropzone p { color: var(--ink-soft); margin: 0; }
+.hint { font-size: 0.8rem; color: var(--ink-soft); }
+.eyebrow { text-transform: uppercase; letter-spacing: 0.1em; font-size: 0.68rem; color: var(--ink-soft); margin: 0; }
+
+// --- cinta ---
+.ribbon-groups {
+  display: flex; gap: 0.25rem; border-bottom: 1px solid var(--line); margin-bottom: 0.75rem;
+  button {
+    border: none; background: none; font: inherit; cursor: pointer;
+    padding: 0.5rem 0.9rem; color: var(--ink-soft);
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+    &.active { color: var(--cobalt); border-bottom-color: var(--cobalt); font-weight: 600; }
+  }
+}
+
+.ribbon {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem;
+  padding: 0.5rem 0.65rem; background: #fff;
+  border: 1px solid var(--line); border-radius: 10px; margin-bottom: 0.75rem;
+
+  button, .ribbon-file {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    border: 1px solid var(--line); border-radius: 8px; padding: 0.4rem 0.6rem;
+    background: #fff; font: inherit; font-size: 0.85rem; cursor: pointer;
+    span {
+      display: inline-grid; place-items: center; width: 20px; height: 20px;
+      border-radius: 5px; background: var(--cobalt-soft); color: var(--cobalt); font-weight: 700;
+    }
+    &:hover:not(:disabled) { border-color: var(--cobalt); }
+    &:disabled { opacity: 0.45; cursor: not-allowed; }
+    &.active { border-color: var(--cobalt); background: var(--cobalt-soft); }
+    &.accent { border-color: var(--cobalt); color: var(--cobalt); font-weight: 600; }
+  }
+  .ribbon-sep { width: 1px; height: 24px; background: var(--line); margin: 0 0.2rem; }
+  .ribbon-hint { font-size: 0.8rem; color: var(--ink-soft); margin-left: 0.4rem; }
+  .stamp-btn {
+    font-size: 0.7rem; font-weight: 700; letter-spacing: 0.04em;
+    color: #b42318; border-color: #f1b3ac;
+  }
+}
+.sw-highlight { background: #fff3b0 !important; color: #7a5c00 !important; }
+.sw-underline { text-decoration: underline; }
+.sw-strike { text-decoration: line-through; }
+.mk-check { color: #027a48 !important; background: #e4f4ea !important; }
+.mk-cross { color: #b42318 !important; background: #fdecec !important; }
+
+.mode-hint {
+  font-size: 0.8rem; color: var(--cobalt); background: var(--cobalt-soft);
+  padding: 0.4rem 0.7rem; border-radius: 8px; margin: 0 0 0.75rem;
+}
+
+// --- diálogo de exportación ---
+.export-dialog {
+  border: 1px solid var(--line); border-radius: 12px; background: #fff;
+  padding: 1rem; margin-bottom: 0.9rem;
+}
+.export-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem;
+  h3 { margin: 0 0 0.2rem; font-size: 1rem; color: #14213d; }
+  p { margin: 0; font-size: 0.83rem; color: var(--ink-soft); }
+}
+.export-body { margin-top: 0.9rem; max-width: 420px; }
+.export-actions { margin-top: 0.5rem; }
+
+// --- tres paneles ---
+.studio {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr) 290px;
+  gap: 1.1rem;
+  align-items: start;
+}
+@media (max-width: 1150px) { .studio { grid-template-columns: 1fr; } }
+
+.panel {
+  background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 0.9rem;
+}
+.canvas-column {
+  min-width: 0;
+  // Deja sitio a la cabecera, la cinta, los controles y la barra fija del pie.
+  // No necesita ser exacto: lo único que puede quedar bajo el pie es la cola de
+  // la página, que se alcanza con scroll — los controles ya están arriba.
+  --canvas-max-height: calc(100vh - 380px);
+}
+.section-divider { height: 1px; background: var(--line); margin: 0.9rem 0; }
+.section-label { font-size: 0.78rem; font-weight: 700; color: var(--ink); margin: 0 0 0.5rem; }
+.panel-hint { font-size: 0.78rem; color: var(--ink-soft); margin: 0; }
+
+.page-nav {
+  display: flex; align-items: center; justify-content: center; gap: 0.75rem; margin-bottom: 0.5rem;
+  button {
+    width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 8px;
+    background: #fff; font-size: 1.1rem; cursor: pointer;
+    &:disabled { opacity: 0.4; cursor: not-allowed; }
+  }
+}
+.mono { font-variant-numeric: tabular-nums; font-size: 0.9rem; }
+
+.rotation-note {
+  font-size: 0.78rem; color: #b45309; background: #fdf4e7;
+  border: 1px solid #f5d9b0; border-radius: 8px;
+  padding: 0.35rem 0.65rem; margin: 0 0 0.5rem; text-align: center;
+}
+
+.change-list {
+  margin: 0; padding-left: 1.1rem; display: grid; gap: 0.25rem;
+  font-size: 0.82rem; color: var(--ink);
+  &.pending li { color: #b45309; }
+  &.applied li { color: var(--ink-soft); }
+}
+
+.field { display: grid; gap: 0.3rem; margin-bottom: 0.5rem; }
+.field span { font-size: 0.8rem; color: var(--ink-soft); }
+.field input, .field select {
+  border: 1px solid var(--line); border-radius: 8px; padding: 0.45rem 0.55rem; font: inherit; width: 100%;
+}
+
+// --- pie fijo: la única salida a disco ---
+.studio-foot {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: 0.7rem 1.5rem;
+  background: #fff; border-top: 1px solid var(--line);
+  box-shadow: 0 -4px 20px rgba(16, 24, 40, 0.06);
+}
+.foot-status { font-size: 0.85rem; color: var(--ink-soft); }
+.foot-actions { display: flex; gap: 0.5rem; }
