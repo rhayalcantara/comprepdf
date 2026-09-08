@@ -28,6 +28,7 @@ function parseLimit(raw: unknown): number {
 function serializeJobSummary(
   job: CompressionJob,
   username?: string | null,
+  sessionSteps?: number,
 ): Record<string, unknown> {
   const files = job.files ?? [];
   const originalFile = files.find((f) => f.fileType === 'original');
@@ -39,6 +40,10 @@ function serializeJobSummary(
     jobId: job.id,
     status: job.status,
     operationType: job.operationType,
+    // Sesión del Estudio: el renglón representa la cadena completa, no un paso.
+    // `sessionSteps` es cuántas operaciones se aplicaron sobre el documento.
+    sessionId: job.sessionId ?? null,
+    sessionSteps: job.sessionId ? sessionSteps ?? 1 : null,
     compressionLevel: job.compressionLevel ?? null,
     originalFilename: originalFile?.originalFilename ?? null,
     originalSize: originalFile ? Number(originalFile.fileSize) : null,
@@ -89,12 +94,20 @@ export const listJobs = async (
     if (asAdmin) {
       ({ jobs, total } = await JobModel.listAll({ page, limit }));
       const usernames = await JobModel.usernamesByIds(jobs.map((j) => j.userId));
+      const steps = await JobModel.sessionStepCounts(jobs.map((j) => j.sessionId));
       items = jobs.map((j) =>
-        serializeJobSummary(j, j.userId ? usernames.get(j.userId) ?? null : null),
+        serializeJobSummary(
+          j,
+          j.userId ? usernames.get(j.userId) ?? null : null,
+          j.sessionId ? steps.get(j.sessionId) : undefined,
+        ),
       );
     } else {
       ({ jobs, total } = await JobModel.listByUser(req.user.id, { page, limit }));
-      items = jobs.map((j) => serializeJobSummary(j));
+      const steps = await JobModel.sessionStepCounts(jobs.map((j) => j.sessionId));
+      items = jobs.map((j) =>
+        serializeJobSummary(j, undefined, j.sessionId ? steps.get(j.sessionId) : undefined),
+      );
     }
 
     res.json({

@@ -9,6 +9,7 @@ import { config } from '../config/env';
 import { logger } from '../utils/logger';
 import { ValidationError } from '../utils/errors';
 import { sanitizeOutputName } from '../utils/filename';
+import { sessionColumns } from '../middlewares/source-job.middleware';
 
 /**
  * Crea un job de operación PDF: guarda la fila del job (status='pending') con sus
@@ -46,9 +47,15 @@ async function createPdfJob(
   // Orden de los originales (relevante para merge)
   const fileOrder = fileRecords.map((f) => f.id);
 
+  // Sesión de trabajo del Estudio: de dónde vino la entrada y a qué cadena
+  // pertenece este paso. Ambas NULL en el flujo clásico de una sola operación.
+  const { sessionId, parentJobId } = sessionColumns(req);
+
   const job = jobRepo.create({
     id: jobId,
     userId: req.user?.id ?? null,
+    sessionId,
+    parentJobId,
     status: 'pending',
     operationType,
     operationParams: { ...params, file_order: fileOrder },
@@ -57,7 +64,10 @@ async function createPdfJob(
   await jobRepo.save(job);
   await fileRepo.save(fileRecords);
 
-  logger.info(`PDF job ${jobId} (${operationType}) created with ${files.length} file(s)`);
+  logger.info(
+    `PDF job ${jobId} (${operationType}) created with ${files.length} file(s)` +
+    (sessionId ? ` [session ${sessionId}${parentJobId ? `, after ${parentJobId}` : ''}]` : ''),
+  );
 
   res.status(201).json({
     success: true,
@@ -65,6 +75,8 @@ async function createPdfJob(
       jobId,
       status: 'pending',
       operationType,
+      sessionId,
+      parentJobId,
       createdAt: job.createdAt,
     },
   });
@@ -437,7 +449,9 @@ function parsePlacement(body: Record<string, unknown>): { x: number; y: number; 
 
 export const signPdf = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const filesByField = req.files as { [field: string]: Express.Multer.File[] } | undefined;
-  const pdf = filesByField?.file?.[0];
+  // `req.file` cubre el encadenado: cuando la entrada viene de `sourceJobId` la
+  // petición es JSON y multer nunca llega a crear el objeto por campos.
+  const pdf = filesByField?.file?.[0] ?? req.file;
   const cert = filesByField?.cert?.[0];
   const signature = filesByField?.signature?.[0];
   try {
@@ -789,7 +803,8 @@ function validateEdit(raw: unknown, index: number, images: Express.Multer.File[]
 
 export const editPdf = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const filesByField = req.files as { [field: string]: Express.Multer.File[] } | undefined;
-  const pdf = filesByField?.file?.[0];
+  // Igual que en `signPdf`: con `sourceJobId` el PDF llega por `req.file`.
+  const pdf = filesByField?.file?.[0] ?? req.file;
   const images = filesByField?.images ?? [];
   try {
     if (!pdf) throw new ValidationError('PDF file (field "file") is required');

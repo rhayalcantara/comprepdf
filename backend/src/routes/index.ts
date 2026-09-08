@@ -16,6 +16,7 @@ import {
   listForms, getForm, createForm, updateForm, deleteForm, generateForm, previewForm,
 } from '../controllers/form.controller';
 import { upload, uploadMultiple, uploadSign, uploadEdit, uploadConvert, enforceSignatureSizeLimit } from '../middlewares/upload.middleware';
+import { resolveSourceJob, resolveMergeSources } from '../middlewares/source-job.middleware';
 import { validatePdfFile, validatePdfFiles, validateCompressionOptions, validateCertificateRequest } from '../middlewares/validation.middleware';
 
 const router = Router();
@@ -74,26 +75,41 @@ router.use(requireAuth);
 router.get('/auth/me', me);
 router.post('/auth/change-password', changePassword);
 
+// ---------------------------------------------------------------------------
+// ENCADENADO DE OPERACIONES (Estudio, Fase 0)
+//
+// `resolveSourceJob` va SIEMPRE entre el multer y la validación: cuando termina,
+// `req.file` está puesto venga de una subida o de la salida de un job anterior
+// (`sourceJobId`), así que `validatePdfFile` y los controladores no distinguen
+// un caso del otro. También anota la sesión de trabajo (`sessionId`).
+// ---------------------------------------------------------------------------
+
 // Compression (liga el job al usuario vía user_id = req.user.id)
-router.post('/compress', upload.single('file'), validatePdfFile, validateCompressionOptions, compressPdf);
+router.post('/compress', upload.single('file'), resolveSourceJob, validatePdfFile, validateCompressionOptions, compressPdf);
 
 // PDF operation routes (comparten los endpoints genéricos /jobs/:jobId de abajo)
-router.post('/pdf/split', upload.single('file'), validatePdfFile, splitPdf);
-router.post('/pdf/merge', uploadMultiple.array('files', 50), validatePdfFiles, mergePdfs);
-router.post('/pdf/extract', upload.single('file'), validatePdfFile, extractPages);
-router.post('/pdf/rotate', upload.single('file'), validatePdfFile, rotatePages);
-router.post('/pdf/organize', upload.single('file'), validatePdfFile, organizePdf);
+router.post('/pdf/split', upload.single('file'), resolveSourceJob, validatePdfFile, splitPdf);
+// Merge: `resolveMergeSources` ordena la secuencia cuando se mezclan jobs
+// previos y subidas (insertar páginas en el documento abierto).
+router.post('/pdf/merge', uploadMultiple.array('files', 50), resolveMergeSources, validatePdfFiles, mergePdfs);
+router.post('/pdf/extract', upload.single('file'), resolveSourceJob, validatePdfFile, extractPages);
+router.post('/pdf/rotate', upload.single('file'), resolveSourceJob, validatePdfFile, rotatePages);
+router.post('/pdf/organize', upload.single('file'), resolveSourceJob, validatePdfFile, organizePdf);
 // Conversión a PDF: la entrada NO es un PDF (Office/imagen), así que usa su
-// propio multer por extensión y valida magic bytes en el controlador.
-router.post('/pdf/convert', uploadConvert.single('file'), convertToPdf);
+// propio multer por extensión y valida magic bytes en el controlador. No se
+// encadena (nadie produce .docx que haya que reconvertir), pero sí abre sesión:
+// convertir es la puerta de entrada al Estudio.
+router.post('/pdf/convert', uploadConvert.single('file'), resolveSourceJob, convertToPdf);
 // PDF -> Word: la entrada SÍ es un PDF, así que usa el pipeline PDF estándar.
-router.post('/pdf/to-word', upload.single('file'), validatePdfFile, pdfToWord);
+router.post('/pdf/to-word', upload.single('file'), resolveSourceJob, validatePdfFile, pdfToWord);
 // PDF -> Excel: extraccion de tablas (una hoja por tabla).
-router.post('/pdf/to-excel', upload.single('file'), validatePdfFile, pdfToExcel);
+router.post('/pdf/to-excel', upload.single('file'), resolveSourceJob, validatePdfFile, pdfToExcel);
 // Traducir PDF: LLM local (Ollama) en el worker; mantiene el diseno.
-router.post('/pdf/translate', upload.single('file'), validatePdfFile, translatePdf);
-router.post('/pdf/protect', upload.single('file'), validatePdfFile, protectPdf);
-router.post('/pdf/unlock', unlockPdf);
+router.post('/pdf/translate', upload.single('file'), resolveSourceJob, validatePdfFile, translatePdf);
+router.post('/pdf/protect', upload.single('file'), resolveSourceJob, validatePdfFile, protectPdf);
+// Desbloquear: le faltaban el multer y la validación, así que `req.file` y
+// `req.body.password` llegaban siempre vacíos (400 fijo).
+router.post('/pdf/unlock', upload.single('file'), resolveSourceJob, validatePdfFile, unlockPdf);
 router.post(
   '/pdf/sign',
   uploadSign.fields([
@@ -102,6 +118,7 @@ router.post(
     { name: 'signature', maxCount: 1 },
   ]),
   enforceSignatureSizeLimit,
+  resolveSourceJob,
   signPdf,
 );
 // Edición de PDF: el PDF en 'file' + imágenes a estampar en 'images'; las
@@ -113,6 +130,7 @@ router.post(
     { name: 'file', maxCount: 1 },
     { name: 'images', maxCount: 50 },
   ]),
+  resolveSourceJob,
   editPdf,
 );
 

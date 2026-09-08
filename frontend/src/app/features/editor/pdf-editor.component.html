@@ -5,6 +5,7 @@
   </div>
   <div class="toolbar-actions">
     @if (doc) {
+      <a class="btn secondary" routerLink="/estudio">Abrir en el Estudio</a>
       <button class="btn primary" type="button" (click)="apply()" [disabled]="busy || !elements.length">
         Aplicar y descargar
       </button>
@@ -30,6 +31,10 @@
         Elegir PDF
       </label>
       <span class="hint">…o arrastra el archivo aquí.</span>
+      <p class="hint">
+        ¿Necesitas además reordenar páginas, firmar o comprimir sin descargar entre pasos?
+        <a routerLink="/estudio">Usa el Estudio</a>.
+      </p>
     </div>
   </div>
 } @else {
@@ -89,7 +94,7 @@
       @if (mode === 'poly') {
         <p class="panel-hint">Haz clic para poner vértices y doble clic (o Terminar) para cerrar.</p>
         <button class="btn secondary full" type="button" (click)="finishPolygon()"
-                [disabled]="polyDraft.length < 3">Terminar polígono</button>
+                [disabled]="polyDraftLength < 3">Terminar polígono</button>
       }
 
       <div class="section-divider"></div>
@@ -116,273 +121,23 @@
       </label>
     </aside>
 
-    <!-- Centro: página con los elementos superpuestos -->
+    <!-- Centro: página con los elementos superpuestos (lienzo compartido) -->
     <section class="canvas-column">
-      <div class="zoom-bar">
-        <button type="button" title="Alejar" (click)="setZoom(zoom - 0.25)" [disabled]="zoom <= 0.5">−</button>
-        <span class="mono">{{ (zoom * 100).toFixed(0) }}%</span>
-        <button type="button" title="Acercar" (click)="setZoom(zoom + 0.25)" [disabled]="zoom >= 3">+</button>
-        <button type="button" class="zoom-fit" title="Ajustar al ancho" (click)="setZoom(1)" [disabled]="zoom === 1">Ajustar</button>
-      </div>
-      <div class="canvas-scroll" (wheel)="onWheel($event)">
-        <div class="place-frame" #frame [style.width.px]="frameWidth"
-             [class.mode-active]="mode !== 'select'"
-             [class.mode-draw]="mode === 'draw'"
-             (pointerdown)="onFramePointerDown($event)"
-             (pointermove)="onFramePointerMove($event)"
-             (pointerup)="onFramePointerUp()"
-             (pointercancel)="onFramePointerUp()"
-             (dblclick)="mode === 'poly' && finishPolygon()">
-        <canvas #pageCanvas></canvas>
-        <!-- Trazo / polígono en curso -->
-        @if (drawDraft.length > 1 || polyDraft.length > 0) {
-          <svg class="draft-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
-            @if (drawDraft.length > 1) {
-              <polyline [attr.points]="draftPoints(drawDraft)" fill="none" stroke="#B42318"
-                        stroke-width="2" vector-effect="non-scaling-stroke" />
-            }
-            @if (polyDraft.length > 0) {
-              <polyline [attr.points]="draftPoints(polyDraft)" fill="none" stroke="#B42318"
-                        stroke-width="2" stroke-dasharray="4 3" vector-effect="non-scaling-stroke" />
-            }
-          </svg>
-          @for (v of polyDraft; track $index) {
-            <span class="poly-vertex" [style.left.%]="v[0] * 100" [style.top.%]="v[1] * 100"></span>
-          }
-        }
-        @for (el of elementsOnPage; track el.id) {
-          <div class="el-box"
-               [class.selected]="selectedId === el.id"
-               [class.whiteout]="el.type === 'whiteout'"
-               [style.left.%]="el.left * 100"
-               [style.top.%]="el.top * 100"
-               [style.width.%]="el.width * 100"
-               [style.height.%]="el.height * 100"
-               (pointerdown)="startDrag($event, el, 'move')"
-               (pointermove)="onDragMove($event)"
-               (pointerup)="endDrag()"
-               (pointercancel)="endDrag()"
-               (click)="select(el)">
-            @switch (el.type) {
-              @case ('image') {
-                <img [src]="el.imageUrl" alt="" draggable="false" />
-              }
-              @case ('highlight') {
-                <span class="el-fill" [style.background]="el.color"></span>
-              }
-              @case ('underline') {
-                <svg class="el-shape" viewBox="0 0 100 100" preserveAspectRatio="none">
-                  <line x1="0" y1="100" x2="100" y2="100" vector-effect="non-scaling-stroke"
-                        [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
-                </svg>
-              }
-              @case ('strikeout') {
-                <svg class="el-shape" viewBox="0 0 100 100" preserveAspectRatio="none">
-                  <line x1="0" y1="50" x2="100" y2="50" vector-effect="non-scaling-stroke"
-                        [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
-                </svg>
-              }
-              @case ('line') {
-                <svg class="el-shape" viewBox="0 0 100 100" preserveAspectRatio="none">
-                  <line x1="0" [attr.y1]="el.dir === 'down' ? 0 : 100" x2="100"
-                        [attr.y2]="el.dir === 'down' ? 100 : 0" vector-effect="non-scaling-stroke"
-                        [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
-                </svg>
-              }
-              @case ('arrow') {
-                <svg class="el-shape" viewBox="0 0 100 100" preserveAspectRatio="none">
-                  <line x1="0" [attr.y1]="el.dir === 'down' ? 0 : 100" x2="100"
-                        [attr.y2]="el.dir === 'down' ? 100 : 0" vector-effect="non-scaling-stroke"
-                        [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
-                  <line x1="100" [attr.y1]="el.dir === 'down' ? 100 : 0" x2="80"
-                        [attr.y2]="el.dir === 'down' ? 94 : 6" vector-effect="non-scaling-stroke"
-                        [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
-                  <line x1="100" [attr.y1]="el.dir === 'down' ? 100 : 0" x2="94"
-                        [attr.y2]="el.dir === 'down' ? 76 : 24" vector-effect="non-scaling-stroke"
-                        [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
-                </svg>
-              }
-              @case ('rect') {
-                <svg class="el-shape" viewBox="0 0 100 100" preserveAspectRatio="none">
-                  <rect x="0" y="0" width="100" height="100" fill="none" vector-effect="non-scaling-stroke"
-                        [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
-                </svg>
-              }
-              @case ('ellipse') {
-                <svg class="el-shape" viewBox="0 0 100 100" preserveAspectRatio="none">
-                  <ellipse cx="50" cy="50" rx="50" ry="50" fill="none" vector-effect="non-scaling-stroke"
-                           [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
-                </svg>
-              }
-              @case ('mark') {
-                <!-- Sin preserveAspectRatio none: el glifo queda cuadrado y centrado,
-                     igual que lo dibuja el worker con min(w,h). -->
-                <svg class="el-shape" viewBox="0 0 100 100">
-                  @switch (el.mark) {
-                    @case ('cross') {
-                      <line x1="10" y1="10" x2="90" y2="90" vector-effect="non-scaling-stroke"
-                            [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
-                      <line x1="10" y1="90" x2="90" y2="10" vector-effect="non-scaling-stroke"
-                            [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
-                    }
-                    @case ('dot') {
-                      <circle cx="50" cy="50" r="45" [attr.fill]="el.color" />
-                    }
-                    @default {
-                      <polyline points="10,50 38,85 90,15" fill="none" vector-effect="non-scaling-stroke"
-                                [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
-                    }
-                  }
-                </svg>
-              }
-              @case ('freehand') {
-                <svg class="el-shape" viewBox="0 0 100 100" preserveAspectRatio="none">
-                  <polyline [attr.points]="svgPoints(el)" fill="none" vector-effect="non-scaling-stroke"
-                            stroke-linejoin="round" stroke-linecap="round"
-                            [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
-                </svg>
-              }
-              @case ('polygon') {
-                <svg class="el-shape" viewBox="0 0 100 100" preserveAspectRatio="none">
-                  <polygon [attr.points]="svgPoints(el)" fill="none" vector-effect="non-scaling-stroke"
-                           stroke-linejoin="round"
-                           [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
-                </svg>
-              }
-              @case ('cloud') {
-                <svg class="el-shape" [attr.viewBox]="cloudView(el)" preserveAspectRatio="none">
-                  <path [attr.d]="cloudPath(el)" fill="none" vector-effect="non-scaling-stroke"
-                        [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
-                </svg>
-              }
-              @case ('callout') {
-                <svg class="el-shape" viewBox="0 0 100 100" preserveAspectRatio="none">
-                  <line x1="50" y1="50" [attr.x2]="tipLeftPct(el)" [attr.y2]="tipTopPct(el)"
-                        vector-effect="non-scaling-stroke"
-                        [attr.stroke]="el.color" [attr.stroke-width]="el.strokeWidth" />
-                </svg>
-                <span class="el-bubble" [style.border-color]="el.color"
-                      [style.color]="el.color" [style.font-size.px]="el.fontSize">{{ el.text }}</span>
-                <span class="tip-handle" title="Arrastra la punta de la flecha"
-                      [style.left.%]="tipLeftPct(el)" [style.top.%]="tipTopPct(el)"
-                      (pointerdown)="startDrag($event, el, 'tip')"
-                      (pointermove)="onDragMove($event)"
-                      (pointerup)="endDrag()"
-                      (pointercancel)="endDrag()"></span>
-              }
-              @case ('stamp') {
-                <span class="el-stamp" [style.border-color]="el.color" [style.color]="el.color">
-                  <span class="el-stamp-text">{{ el.text }}</span>
-                  @if (el.showDatetime) {
-                    <span class="el-stamp-date">{{ stampDate() }}</span>
-                  }
-                </span>
-              }
-              @default {
-                <span class="el-text" [style.color]="el.type === 'whiteout' ? el.textColor : el.color"
-                      [style.font-size.px]="el.fontSize">{{ el.text }}</span>
-              }
-            }
-            <span class="el-handle"
-                  (pointerdown)="startDrag($event, el, 'resize')"
-                  (pointermove)="onDragMove($event)"
-                  (pointerup)="endDrag()"
-                  (pointercancel)="endDrag()"></span>
-          </div>
-        }
-        </div>
-      </div>
+      <app-pdf-markup-canvas
+        [doc]="doc"
+        [page]="currentPage"
+        [elements]="elements"
+        [selectedId]="selectedId"
+        [mode]="mode"
+        (selectedIdChange)="selectedId = $event"
+        (elementsChange)="onElementsChange($event)"
+        (pageAspectChange)="onPageAspect($event)"
+        (polygonFinished)="onPolygonFinished()" />
     </section>
 
     <!-- Panel derecho: propiedades del elemento seleccionado -->
     <aside class="panel props-panel">
-      @if (selected; as el) {
-        <div class="panel-heading props-heading">
-          <div><p class="eyebrow">Elemento</p><h2>{{ typeLabel(el) }}</h2></div>
-          <button class="icon-button danger" type="button" title="Eliminar" (click)="remove(el)">×</button>
-        </div>
-
-        @if (isShape(el)) {
-          <label class="field">
-            <span>Color</span>
-            <input type="color" [(ngModel)]="el.color" />
-          </label>
-          @if (el.type !== 'highlight') {
-            <label class="field">
-              <span>Grosor del trazo ({{ el.strokeWidth }} pt)</span>
-              <input type="range" min="0.5" max="12" step="0.5"
-                     [ngModel]="el.strokeWidth" (ngModelChange)="el.strokeWidth = +$event" />
-            </label>
-          }
-          @if (el.type === 'line' || el.type === 'arrow') {
-            <label class="field">
-              <span>Dirección</span>
-              <select [(ngModel)]="el.dir">
-                <option value="up">↗ Ascendente</option>
-                <option value="down">↘ Descendente</option>
-              </select>
-            </label>
-          }
-          @if (el.type === 'mark') {
-            <label class="field">
-              <span>Tipo de marca</span>
-              <select [(ngModel)]="el.mark">
-                <option value="check">✓ Verificación</option>
-                <option value="cross">✗ Cruz</option>
-                <option value="dot">● Punto</option>
-              </select>
-            </label>
-          }
-          @if (el.type === 'callout') {
-            <label class="field">
-              <span>Texto</span>
-              <textarea rows="2" [(ngModel)]="el.text"></textarea>
-            </label>
-            <label class="field">
-              <span>Tamaño de letra</span>
-              <input type="number" min="4" max="96" [(ngModel)]="el.fontSize" />
-            </label>
-            <p class="panel-hint">Arrastra el punto rojo para apuntar la flecha.</p>
-          }
-          @if (el.type === 'stamp') {
-            <label class="field">
-              <span>Texto del sello</span>
-              <input maxlength="60" [(ngModel)]="el.text" />
-            </label>
-            <label class="check-field">
-              <input type="checkbox" [(ngModel)]="el.showDatetime" />
-              <span>Incluir fecha y hora (la pone el servidor al aplicar)</span>
-            </label>
-          }
-          <p class="panel-hint">Arrastra el recuadro para mover y la esquina para cambiar el tamaño.</p>
-        } @else if (el.type !== 'image') {
-          <label class="field">
-            <span>{{ el.type === 'whiteout' ? 'Texto encima (opcional)' : 'Texto' }}</span>
-            <textarea rows="3" [(ngModel)]="el.text"></textarea>
-          </label>
-          <label class="field">
-            <span>Tamaño de letra</span>
-            <input type="number" min="4" max="96" [(ngModel)]="el.fontSize" />
-          </label>
-          <label class="field">
-            <span>Color del texto</span>
-            <input type="color" [(ngModel)]="el.type === 'whiteout' ? el.textColor : el.color" />
-          </label>
-          @if (el.type === 'whiteout') {
-            <label class="field">
-              <span>Color del recuadro</span>
-              <input type="color" [(ngModel)]="el.color" />
-            </label>
-          }
-        } @else {
-          <p class="panel-hint">Arrastra el recuadro para mover la imagen y la esquina para cambiar su tamaño. Mantiene su proporción.</p>
-        }
-      } @else {
-        <div class="empty-props">
-          <strong>Nada seleccionado</strong>
-          <span>Añade un elemento o selecciónalo en la página para editarlo.</span>
-        </div>
-      }
+      <app-markup-props [element]="selected" (remove)="remove($event)" />
     </aside>
   </main>
 }

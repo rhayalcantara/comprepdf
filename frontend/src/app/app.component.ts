@@ -18,6 +18,7 @@ import { AuthService } from './core/services/auth.service';
             <span class="font-display font-bold text-xl text-ink">Compre<span class="text-cobalt">PDF</span></span>
           </a>
           <nav class="flex items-center gap-1 ml-auto">
+            <a routerLink="/estudio" routerLinkActive="nav-active" class="nav-link">Estudio</a>
             <a routerLink="/" [routerLinkActiveOptions]="{ exact: true }" routerLinkActive="nav-active" class="nav-link">Herramientas</a>
             <a routerLink="/mis-trabajos" routerLinkActive="nav-active" class="nav-link">Mis trabajos</a>
             @if (isAdmin()) {

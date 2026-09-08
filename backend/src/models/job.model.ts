@@ -36,6 +36,21 @@ export class CompressionJob {
   @Column({ name: 'user_id', type: 'varchar', length: 36, nullable: true })
   userId?: string | null;
 
+  /**
+   * Sesión de trabajo del Estudio: agrupa la cadena de operaciones que se aplican
+   * sobre un mismo documento abierto. NULL = job suelto (flujo clásico de una
+   * sola operación desde /tools/:tool). Ver migración 012.
+   */
+  @Column({ name: 'session_id', type: 'varchar', length: 36, nullable: true })
+  sessionId?: string | null;
+
+  /**
+   * Job del que salió la ENTRADA de este job. Lo rellena `resolveSourceJob`
+   * cuando la operación se encadena con `sourceJobId` en vez de subir un archivo.
+   */
+  @Column({ name: 'parent_job_id', type: 'varchar', length: 36, nullable: true })
+  parentJobId?: string | null;
+
   @Column({ type: 'enum', enum: ['pending', 'processing', 'completed', 'failed'], default: 'pending' })
   status!: JobStatus;
 
@@ -91,6 +106,25 @@ export interface JobPage {
  * Acceso a datos de jobs para los listados con ownership. Mismo patrón que
  * `UserModel`: métodos estáticos sobre el repositorio TypeORM.
  */
+/**
+ * Plegado de sesiones para "Mis trabajos": de una cadena de jobs encadenados en
+ * el Estudio solo interesa **el último**, no cada paso intermedio.
+ *
+ * Un job se muestra si NO es de sesión (`session_id NULL`, el flujo clásico de
+ * una sola operación) o si es el más reciente de la suya. El desempate por `id`
+ * hace la selección determinista cuando dos pasos comparten `created_at`
+ * (posible: MySQL guarda TIMESTAMP con precisión de segundo).
+ */
+const LATEST_OF_SESSION = `(
+  job.session_id IS NULL
+  OR NOT EXISTS (
+    SELECT 1 FROM compression_jobs newer
+    WHERE newer.session_id = job.session_id
+      AND (newer.created_at > job.created_at
+           OR (newer.created_at = job.created_at AND newer.id > job.id))
+  )
+)`;
+
 export class JobModel {
   private static repo() {
     return AppDataSource.getRepository(CompressionJob);
@@ -99,12 +133,14 @@ export class JobModel {
   /**
    * Historial paginado de los jobs de UN usuario (más recientes primero),
    * con los archivos cargados para poder mostrar nombres/estado en el listado.
+   * Las sesiones del Estudio se pliegan a su último paso (ver LATEST_OF_SESSION).
    */
   static async listByUser(userId: string, opts: JobPageOptions): Promise<JobPage> {
     const [jobs, total] = await this.repo()
       .createQueryBuilder('job')
       .leftJoinAndSelect('job.files', 'file')
       .where('job.user_id = :userId', { userId })
+      .andWhere(LATEST_OF_SESSION)
       .orderBy('job.createdAt', 'DESC')
       .skip((opts.page - 1) * opts.limit)
       .take(opts.limit)
@@ -121,11 +157,31 @@ export class JobModel {
     const [jobs, total] = await this.repo()
       .createQueryBuilder('job')
       .leftJoinAndSelect('job.files', 'file')
+      .where(LATEST_OF_SESSION)
       .orderBy('job.createdAt', 'DESC')
       .skip((opts.page - 1) * opts.limit)
       .take(opts.limit)
       .getManyAndCount();
     return { jobs, total };
+  }
+
+  /**
+   * Nº de pasos de cada sesión, para que el listado pueda decir "5 operaciones"
+   * en el renglón plegado. Una sola consulta agrupada para toda la página.
+   */
+  static async sessionStepCounts(sessionIds: (string | null | undefined)[]): Promise<Map<string, number>> {
+    const unique = [...new Set(sessionIds.filter((id): id is string => Boolean(id)))];
+    if (unique.length === 0) {
+      return new Map();
+    }
+    const rows = await this.repo()
+      .createQueryBuilder('job')
+      .select('job.session_id', 'sessionId')
+      .addSelect('COUNT(*)', 'steps')
+      .where('job.session_id IN (:...ids)', { ids: unique })
+      .groupBy('job.session_id')
+      .getRawMany<{ sessionId: string; steps: string }>();
+    return new Map(rows.map((r) => [r.sessionId, Number(r.steps)]));
   }
 
   /** Mapa `userId -> username` para adjuntar el propietario en el listado admin. */

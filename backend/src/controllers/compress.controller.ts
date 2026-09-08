@@ -7,29 +7,10 @@ import { CompressionJob, CompressionLevel } from '../models/job.model';
 import { File } from '../models/file.model';
 import { config } from '../config/env';
 import { logger } from '../utils/logger';
-import { NotFoundError, ValidationError, UnauthorizedError } from '../utils/errors';
+import { NotFoundError, ValidationError } from '../utils/errors';
 import { sanitizeOutputName } from '../utils/filename';
-
-/**
- * Autorización por ownership de un job. Reglas (ver PLAN_USUARIOS §5):
- * - admin: ve/acciona cualquier job.
- * - usuario normal: solo sus propios jobs.
- * - un job de otro usuario o huérfano (`userId` NULL) responde **404** (no 403)
- *   para no revelar la existencia de trabajos ajenos.
- * Debe usarse SIEMPRE tras `requireAuth` (garantiza `req.user`).
- */
-function assertJobVisible(job: { userId?: string | null }, req: Request): void {
-  const user = req.user;
-  if (!user) {
-    throw new UnauthorizedError();
-  }
-  if (user.rol === 'admin') {
-    return;
-  }
-  if (!job.userId || job.userId !== user.id) {
-    throw new NotFoundError('Job not found');
-  }
-}
+import { assertJobVisible } from '../utils/job-access';
+import { sessionColumns } from '../middlewares/source-job.middleware';
 
 export const compressPdf = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -45,10 +26,15 @@ export const compressPdf = async (req: Request, res: Response, next: NextFunctio
     const jobRepo = AppDataSource.getRepository(CompressionJob);
     const fileRepo = AppDataSource.getRepository(File);
 
+    // Sesión de trabajo del Estudio (NULL en el flujo clásico de /compress).
+    const { sessionId, parentJobId } = sessionColumns(req);
+
     // Create job
     const job = jobRepo.create({
       id: jobId,
       userId: req.user?.id ?? null,
+      sessionId,
+      parentJobId,
       status: 'pending',
       operationType: 'compress',
       operationParams: outputName ? { output_name: outputName } : undefined,
@@ -86,6 +72,8 @@ export const compressPdf = async (req: Request, res: Response, next: NextFunctio
         originalFilename: req.file.originalname,
         originalSize: req.file.size,
         compressionLevel,
+        sessionId,
+        parentJobId,
         createdAt: job.createdAt,
         estimatedTime: Math.ceil(req.file.size / (1024 * 1024)) * 3,
       },
@@ -121,6 +109,8 @@ export const getJobStatus = async (req: Request, res: Response, next: NextFuncti
         jobId: job.id,
         status: job.status,
         operationType: job.operationType,
+        sessionId: job.sessionId ?? null,
+        parentJobId: job.parentJobId ?? null,
         originalFilename: originalFile?.originalFilename,
         originalSize: originalFile ? Number(originalFile.fileSize) : null,
         outputFilename: resultFile?.originalFilename,

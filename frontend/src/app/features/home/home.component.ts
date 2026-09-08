@@ -9,7 +9,7 @@ import { TOOL_CATALOG } from '../../core/tool-catalog';
   imports: [CommonModule, RouterLink],
   template: `
     <!-- Hero: la tesis es la privacidad — los archivos no salen de la red -->
-    <section class="pt-14 pb-12 text-center">
+    <section class="pt-14 pb-8 text-center">
       <p class="eyebrow mb-4">Herramientas PDF internas</p>
       <h1 class="font-display text-4xl md:text-5xl font-bold leading-tight max-w-3xl mx-auto">
         Trabaja tus PDF sin que<br class="hidden md:block">
@@ -21,8 +21,26 @@ import { TOOL_CATALOG } from '../../core/tool-catalog';
       </p>
     </section>
 
-    <!-- Grid de herramientas -->
+    <!-- Entrada principal: el documento primero, la función después -->
+    <section class="pb-10">
+      <a class="studio-cta no-underline text-inherit" routerLink="/estudio">
+        <span class="tool-chip" style="background:#eaefff">
+          <span class="material-icons" style="color:#2e5bff">auto_awesome_motion</span>
+        </span>
+        <span class="studio-cta-body">
+          <strong class="font-display text-lg">Abrir el Estudio</strong>
+          <span class="text-sm text-ink-soft">
+            Reordena, marca, firma y comprime el mismo documento sin descargar nada
+            en medio. Una sola descarga, al final.
+          </span>
+        </span>
+        <span class="material-icons studio-cta-arrow">arrow_forward</span>
+      </a>
+    </section>
+
+    <!-- Acciones rápidas: para quien ya sabe exactamente qué quiere -->
     <section class="pb-16">
+      <p class="section-label">Acciones rápidas</p>
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         @for (tool of tools; track tool.id) {
           <a class="sheet block p-6 no-underline text-inherit" [routerLink]="tool.route">
@@ -57,6 +75,23 @@ import { TOOL_CATALOG } from '../../core/tool-catalog';
       </div>
     </section>
   `,
+  styles: [`
+    .section-label {
+      font-size: 0.78rem; font-weight: 700; letter-spacing: 0.04em;
+      text-transform: uppercase; color: var(--ink-soft); margin: 0 0 1rem;
+    }
+    .studio-cta {
+      display: flex; align-items: center; gap: 1.1rem;
+      border: 1px solid var(--cobalt); border-radius: 14px;
+      background: linear-gradient(180deg, #fff, #f7f9ff);
+      padding: 1.35rem 1.5rem;
+      box-shadow: 0 8px 30px rgba(46, 91, 255, 0.08);
+      transition: box-shadow 0.15s ease, transform 0.15s ease;
+    }
+    .studio-cta:hover { box-shadow: 0 12px 36px rgba(46, 91, 255, 0.16); transform: translateY(-1px); }
+    .studio-cta-body { display: grid; gap: 0.25rem; }
+    .studio-cta-arrow { margin-left: auto; color: var(--cobalt); }
+  `],
 })
 export class HomeComponent {
   tools = TOOL_CATALOG;

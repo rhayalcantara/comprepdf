@@ -45,6 +45,21 @@ export interface OrganizedPage {
   rotate: number;
 }
 
+// --- Estudio (espacio de trabajo con operaciones encadenadas) ---
+
+/**
+ * Entrada de una operación del Estudio: el archivo subido (primer paso) o el
+ * job cuya salida se toma como entrada (pasos siguientes, sin descarga en medio).
+ */
+export type StudioInput = { file: File } | { sourceJobId: string };
+
+/** Sesión de trabajo: agrupa la cadena de jobs de un mismo documento. */
+export interface StudioSession {
+  sessionId: string;
+  /** Nombre elegido para el resultado final (opcional). */
+  outputName?: string;
+}
+
 /** Una edición a estampar sobre el PDF (convención de coordenadas de la firma). */
 export interface PdfEdit {
   type: 'text' | 'image' | 'whiteout'
@@ -253,6 +268,10 @@ export interface JobSummary {
   createdAt: string;
   completedAt: string | null;
   expiresAt: string | null;
+  /** Sesión del Estudio a la que pertenece el renglón (null = job suelto). */
+  sessionId?: string | null;
+  /** Nº de operaciones aplicadas en esa sesión (null si no es de sesión). */
+  sessionSteps?: number | null;
   /** Solo presente cuando el admin lista con ?all=true (huérfano → null). */
   username?: string | null;
 }
@@ -301,6 +320,8 @@ export interface CreateUserResult {
 }
 
 export interface UpdateUserPayload {
+  /** Corrige el nombre con el que el usuario inicia sesión (debe ser único). */
+  username?: string;
   rol?: 'admin' | 'user';
   estado?: 'activo' | 'inactivo' | 'pendiente';
   nombre?: string;
@@ -581,6 +602,62 @@ export class ApiService {
     images.forEach((img, i) => formData.append('images', img, img.name || `img-${i}.png`));
     this.appendOutputName(formData, outputName);
     return this.http.post<ApiResponse<JobResponse>>(`${this.baseUrl}/pdf/edit`, formData);
+  }
+
+  // --- Estudio: operaciones encadenadas sobre un documento de trabajo ---
+
+  /**
+   * Entrada de una operación del Estudio: o el archivo que subió el usuario
+   * (primer paso de la sesión) o la SALIDA de un job anterior, que el backend
+   * materializa sin que el archivo baje al disco del usuario.
+   */
+  studioInput(file: File): StudioInput;
+  studioInput(jobId: string): StudioInput;
+  studioInput(source: File | string): StudioInput {
+    return typeof source === 'string' ? { sourceJobId: source } : { file: source };
+  }
+
+  /**
+   * Lanza una operación del Estudio. Siempre va como multipart aunque no haya
+   * archivo: así el backend tiene UN solo camino (multer rellena `req.body` con
+   * los campos de texto y `resolveSourceJob` pone `req.file` si toca).
+   */
+  studioOperation(
+    path: string,
+    input: StudioInput,
+    session: StudioSession,
+    fields: Record<string, string> = {},
+    files: { field: string; file: Blob; name?: string }[] = [],
+  ): Observable<ApiResponse<JobResponse>> {
+    const formData = new FormData();
+    if ('file' in input) {
+      formData.append('file', input.file);
+    } else {
+      formData.append('sourceJobId', input.sourceJobId);
+    }
+    formData.append('sessionId', session.sessionId);
+    for (const [key, value] of Object.entries(fields)) {
+      formData.append(key, value);
+    }
+    for (const f of files) {
+      formData.append(f.field, f.file, f.name);
+    }
+    this.appendOutputName(formData, session.outputName);
+    return this.http.post<ApiResponse<JobResponse>>(`${this.baseUrl}${path}`, formData);
+  }
+
+  /** Reordenar / rotar / eliminar páginas en una sola pasada. */
+  studioOrganize(input: StudioInput, pages: OrganizedPage[], session: StudioSession) {
+    return this.studioOperation('/pdf/organize', input, session, { pages: JSON.stringify(pages) });
+  }
+
+  /** Estampar el marcado acumulado (texto, formas, sellos, imágenes). */
+  studioEdit(input: StudioInput, edits: PdfEdit[], images: File[], session: StudioSession) {
+    return this.studioOperation(
+      '/pdf/edit', input, session,
+      { edits: JSON.stringify(edits) },
+      images.map((img, i) => ({ field: 'images', file: img, name: img.name || `img-${i}.png` })),
+    );
   }
 
   getJobStatus(jobId: string): Observable<ApiResponse<CompressionJob>> {

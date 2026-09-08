@@ -105,6 +105,9 @@ export const validateCompressionOptions = (
   res: Response,
   next: NextFunction
 ): void => {
+  // Joi rechaza por defecto las claves desconocidas, así que TODO campo que el
+  // cliente mande junto a las opciones de compresión tiene que estar declarado
+  // aquí o la petición muere con un 400 (le pasaba a `outputName`).
   const schema = Joi.object({
     compressionLevel: Joi.string().valid('low', 'medium', 'high', 'custom').default('medium'),
     preserveMetadata: Joi.boolean().default(true),
@@ -113,6 +116,13 @@ export const validateCompressionOptions = (
       then: Joi.required(),
       otherwise: Joi.optional(),
     }),
+    // Nombre elegido por el usuario para el resultado; lo sanea el controlador
+    // con `sanitizeOutputName`, aquí solo se acota el largo.
+    outputName: Joi.string().trim().max(200).allow('', null),
+    // Sesión del Estudio y encadenado de jobs: los valida `resolveSourceJob`,
+    // que ya corrió; se declaran para que Joi no los tome por intrusos.
+    sessionId: Joi.string().trim().allow('', null),
+    sourceJobId: Joi.string().trim().allow('', null),
   });
 
   const { error, value } = schema.validate(req.body);

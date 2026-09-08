@@ -26,11 +26,20 @@ import { JobModel } from '../../src/models/job.model';
 const TAG = `itest-${Date.now()}`;
 const USER_A = `${TAG}-userA`;
 const USER_B = `${TAG}-userB`;
+const USER_C = `${TAG}-userC`;
 
 // 5 jobs para A y 2 para B, con created_at escalonado (minuto a minuto).
 // Orden esperado DESC (más reciente primero): A5, A4, A3, A2, A1.
 const A_JOBS = [1, 2, 3, 4, 5].map((n) => ({ id: `${TAG}-A${n}`, minute: n }));
 const B_JOBS = [1, 2].map((n) => ({ id: `${TAG}-B${n}`, minute: n }));
+
+// C reproduce una sesión del Estudio: un job suelto (C0) y una cadena de 3 pasos
+// encadenados (C1 → C2 → C3). El listado debe plegar la cadena a su último paso,
+// así que C solo debería ver DOS renglones: C3 y C0.
+const SESSION = `${TAG}-sess`;
+const C_STANDALONE = `${TAG}-C0`;
+const C_CHAIN = [1, 2, 3].map((n) => ({ id: `${TAG}-C${n}`, minute: n }));
+const C_JOBS = [{ id: C_STANDALONE, minute: 0 }, ...C_CHAIN];
 // Base temporal fija y lejana en el pasado para que el orden sea determinista.
 const BASE = new Date('2020-01-01T00:00:00Z');
 
@@ -42,6 +51,7 @@ async function seed(): Promise<void> {
   for (const [uid, uname] of [
     [USER_A, `${TAG}-a`],
     [USER_B, `${TAG}-b`],
+    [USER_C, `${TAG}-c`],
   ]) {
     await q(
       `INSERT INTO users (id, username, nombre, password_hash, rol, estado) VALUES (?, ?, ?, ?, 'user', 'activo')`,
@@ -49,11 +59,17 @@ async function seed(): Promise<void> {
     );
   }
 
-  const insertJob = async (jobId: string, userId: string, minute: number) => {
+  const insertJob = async (
+    jobId: string,
+    userId: string,
+    minute: number,
+    session?: { sessionId: string; parentJobId: string | null },
+  ) => {
     const createdAt = new Date(BASE.getTime() + minute * 60_000);
     await q(
-      `INSERT INTO compression_jobs (id, user_id, status, operation_type, created_at) VALUES (?, ?, 'completed', 'compress', ?)`,
-      [jobId, userId, createdAt],
+      `INSERT INTO compression_jobs (id, user_id, session_id, parent_job_id, status, operation_type, created_at)
+       VALUES (?, ?, ?, ?, 'completed', 'compress', ?)`,
+      [jobId, userId, session?.sessionId ?? null, session?.parentJobId ?? null, createdAt],
     );
     // Dos files por job: fuerza el camino DISTINCT de paginación con join 1:N.
     for (const ft of ['original', 'output']) {
@@ -67,14 +83,23 @@ async function seed(): Promise<void> {
 
   for (const j of A_JOBS) await insertJob(j.id, USER_A, j.minute);
   for (const j of B_JOBS) await insertJob(j.id, USER_B, j.minute);
+
+  // Sesión de C: el job suelto y luego la cadena, en orden (cada paso apunta al
+  // anterior, así que el padre tiene que existir ya).
+  await insertJob(C_STANDALONE, USER_C, 0);
+  let parent: string | null = null;
+  for (const j of C_CHAIN) {
+    await insertJob(j.id, USER_C, j.minute, { sessionId: SESSION, parentJobId: parent });
+    parent = j.id;
+  }
 }
 
 async function cleanup(): Promise<void> {
-  const ids = [...A_JOBS, ...B_JOBS].map((j) => j.id);
+  const ids = [...A_JOBS, ...B_JOBS, ...C_JOBS].map((j) => j.id);
   const placeholders = ids.map(() => '?').join(',');
   await AppDataSource.query(`DELETE FROM files WHERE job_id IN (${placeholders})`, ids);
   await AppDataSource.query(`DELETE FROM compression_jobs WHERE id IN (${placeholders})`, ids);
-  await AppDataSource.query(`DELETE FROM users WHERE id IN (?, ?)`, [USER_A, USER_B]);
+  await AppDataSource.query(`DELETE FROM users WHERE id IN (?, ?, ?)`, [USER_A, USER_B, USER_C]);
 }
 
 beforeAll(async () => {
@@ -164,7 +189,49 @@ describe('JobModel.listAll (integración MySQL: join 1:N + paginación)', () => 
     const { total } = await JobModel.listAll({ page: 1, limit: 1 });
     const all = await JobModel.listAll({ page: 1, limit: total });
     const mine = all.jobs.filter((j) => j.id.startsWith(TAG));
-    expect(mine).toHaveLength(7);
+    // 5 de A + 2 de B + 2 de C (el suelto y el último paso de la sesión: los
+    // dos intermedios se pliegan).
+    expect(mine).toHaveLength(9);
     expect(mine.every((j) => j.files && j.files.length === 2)).toBe(true);
+  });
+});
+
+/**
+ * Plegado de sesiones del Estudio. Va contra BD real porque lo que se prueba es
+ * la subconsulta correlacionada `LATEST_OF_SESSION` dentro del camino
+ * DISTINCT + join 1:N + skip/take de TypeORM: con el repositorio mockeado no se
+ * genera SQL y no se prueba nada.
+ */
+describe('JobModel — plegado de sesiones (Estudio)', () => {
+  dbIt('muestra un solo renglón por sesión: el último paso', async () => {
+    const { jobs, total } = await JobModel.listByUser(USER_C, { page: 1, limit: 100 });
+
+    // 4 jobs insertados, 2 visibles: la cadena de 3 se pliega a su último paso.
+    expect(total).toBe(2);
+    expect(jobs.map((j) => j.id)).toEqual([`${TAG}-C3`, C_STANDALONE]);
+  });
+
+  dbIt('no oculta los jobs sueltos (session_id NULL)', async () => {
+    const { jobs } = await JobModel.listByUser(USER_C, { page: 1, limit: 100 });
+    const standalone = jobs.find((j) => j.id === C_STANDALONE);
+    expect(standalone).toBeDefined();
+    expect(standalone?.sessionId ?? null).toBeNull();
+  });
+
+  dbIt('el paso visible conserva su sesión y su padre', async () => {
+    const { jobs } = await JobModel.listByUser(USER_C, { page: 1, limit: 100 });
+    const last = jobs.find((j) => j.id === `${TAG}-C3`);
+    expect(last?.sessionId).toBe(SESSION);
+    expect(last?.parentJobId).toBe(`${TAG}-C2`);
+  });
+
+  dbIt('sessionStepCounts cuenta TODOS los pasos, no solo el visible', async () => {
+    const counts = await JobModel.sessionStepCounts([SESSION, null, undefined]);
+    expect(counts.get(SESSION)).toBe(3);
+  });
+
+  dbIt('sessionStepCounts sin ids no consulta y devuelve vacío', async () => {
+    const counts = await JobModel.sessionStepCounts([null, undefined]);
+    expect(counts.size).toBe(0);
   });
 });

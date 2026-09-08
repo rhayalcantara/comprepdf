@@ -73,7 +73,16 @@ const STATUS_LABELS: Record<string, string> = {
               <tbody>
                 @for (job of jobs(); track job.jobId) {
                   <tr>
-                    <td>{{ operationLabel(job.operationType) }}</td>
+                    <td>
+                      {{ operationLabel(job.operationType) }}
+                      <!-- Sesión del Estudio: el renglón representa la cadena
+                           completa, no el último paso suelto. -->
+                      @if (job.sessionSteps && job.sessionSteps > 1) {
+                        <span class="session-chip" [title]="'Sesión del Estudio con ' + job.sessionSteps + ' operaciones'">
+                          Estudio · {{ job.sessionSteps }} pasos
+                        </span>
+                      }
+                    </td>
                     <td class="filename" [title]="job.outputFilename || job.originalFilename || ''">
                       {{ job.outputFilename || job.originalFilename || '—' }}
                     </td>
@@ -138,6 +147,7 @@ const STATUS_LABELS: Record<string, string> = {
     .jobs-table td { padding:0.75rem 1rem; border-bottom:1px solid var(--line); vertical-align:middle; }
     .jobs-table tbody tr:last-child td { border-bottom:none; }
     .filename { max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .session-chip { display:block; margin-top:0.2rem; font-size:0.72rem; color:var(--cobalt); background:var(--cobalt-soft); border-radius:999px; padding:0.05rem 0.5rem; width:fit-content; }
     .badge { display:inline-block; padding:0.15rem 0.6rem; border-radius:999px; font-size:0.78rem; font-weight:600; background:var(--mist); color:var(--ink-soft); }
     .badge-ok { background:var(--ok-soft); color:#0f7b4a; }
     .badge-fail { background:var(--danger-soft); color:var(--danger); }

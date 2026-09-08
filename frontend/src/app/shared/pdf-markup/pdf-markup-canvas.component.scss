@@ -1,0 +1,83 @@
+// Estilos del lienzo de marcado. Salieron de pdf-editor.component.scss al
+// extraer el visor a shared/: son los mismos, con una sola fuente ahora.
+:host { display: block; min-width: 0; }
+
+.zoom-bar {
+  display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+  margin-bottom: 0.6rem;
+  button {
+    width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 8px;
+    background: #fff; font-size: 1rem; cursor: pointer;
+    &:disabled { opacity: 0.4; cursor: not-allowed; }
+  }
+  .zoom-fit { width: auto; padding: 0 0.6rem; font-size: 0.82rem; }
+  .mono { min-width: 3.2rem; text-align: center; font-variant-numeric: tabular-nums; font-size: 0.9rem; }
+}
+
+// Con zoom el marco crece más que la columna: se hace scroll aquí.
+// El alto es ajustable por el contenedor (`--canvas-max-height`) porque el
+// Estudio tiene además una barra fija abajo y una cinta arriba que le comen
+// altura; con el valor de /editor, su navegación de páginas quedaba tapada.
+.canvas-scroll { overflow: auto; max-height: var(--canvas-max-height, calc(100vh - 170px)); }
+.place-frame {
+  position: relative;
+  margin: 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--mist);
+  box-shadow: 0 8px 30px rgba(16, 24, 40, 0.06);
+}
+canvas { display: block; width: 100%; height: auto; }
+
+.el-box {
+  position: absolute;
+  border: 1.5px solid var(--cobalt);
+  background: rgba(46, 91, 255, 0.05);
+  cursor: move;
+  touch-action: none;
+  user-select: none;
+  display: flex;
+  align-items: flex-start;
+  overflow: visible;
+  &.selected { box-shadow: 0 0 0 2px rgba(46, 91, 255, 0.35); }
+  &.whiteout { background: rgba(255, 255, 255, 0.9); border-style: dashed; }
+  img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+}
+.el-text { padding: 1px 2px; line-height: 1.15; white-space: pre-wrap; pointer-events: none; overflow: hidden; }
+.el-fill { position: absolute; inset: 0; opacity: 0.35; pointer-events: none; }
+.el-shape { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+
+.mode-draw { cursor: crosshair; }
+.mode-active .el-box { pointer-events: none; }
+.draft-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.poly-vertex {
+  position: absolute; width: 8px; height: 8px; border-radius: 50%;
+  background: #b42318; border: 1.5px solid #fff; transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.el-bubble {
+  position: absolute; inset: 0; display: flex; align-items: center; padding: 2px 6px;
+  background: #fff; border: 1.5px solid; border-radius: 6px; line-height: 1.15;
+  white-space: pre-wrap; overflow: hidden; pointer-events: none;
+}
+.tip-handle {
+  position: absolute; width: 12px; height: 12px; border-radius: 50%;
+  background: #b42318; border: 2px solid #fff; transform: translate(-50%, -50%);
+  box-shadow: 0 1px 3px rgba(18, 35, 63, 0.35); cursor: grab; touch-action: none;
+}
+.el-stamp {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 1px;
+  border: 2px solid; border-radius: 6px; pointer-events: none;
+  font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;
+  container-type: size;
+}
+.el-stamp-text { font-size: 42cqh; line-height: 1; }
+.el-stamp-date { font-size: 24cqh; line-height: 1; font-weight: 600; }
+
+.el-handle {
+  position: absolute; right: -7px; bottom: -7px; width: 14px; height: 14px;
+  border-radius: 50%; background: var(--cobalt); border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(18, 35, 63, 0.3); cursor: nwse-resize; touch-action: none;
+}

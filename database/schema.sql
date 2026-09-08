@@ -28,6 +28,11 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS compression_jobs (
     id VARCHAR(36) PRIMARY KEY,
     user_id VARCHAR(36) NULL,
+    -- Sesión de trabajo del Estudio: agrupa la cadena de operaciones de un mismo
+    -- documento. NULL = job suelto (flujo clásico de una sola operación).
+    session_id VARCHAR(36) NULL,
+    -- Job del que salió la ENTRADA de este job (encadenado sin descarga intermedia).
+    parent_job_id VARCHAR(36) NULL,
     status ENUM('pending', 'processing', 'completed', 'failed') DEFAULT 'pending',
     operation_type ENUM('compress', 'split', 'merge', 'sign', 'extract', 'rotate', 'protect', 'unlock', 'certificate', 'form_generate', 'pdf_edit', 'organize', 'convert', 'pdf_to_word', 'pdf_to_excel', 'translate') NOT NULL DEFAULT 'compress',
     operation_params JSON NULL,
@@ -39,11 +44,14 @@ CREATE TABLE IF NOT EXISTS compression_jobs (
     completed_at TIMESTAMP NULL,
     error_message TEXT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (parent_job_id) REFERENCES compression_jobs(id) ON DELETE SET NULL,
     INDEX idx_status (status),
     INDEX idx_operation_type (operation_type),
     INDEX idx_status_created (status, created_at),
     INDEX idx_created_at (created_at),
-    INDEX idx_user_created (user_id, created_at)
+    INDEX idx_user_created (user_id, created_at),
+    INDEX idx_session (session_id, created_at),
+    INDEX idx_parent_job (parent_job_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Tabla de archivos

@@ -40,6 +40,13 @@ export const routes: Routes = [
     loadComponent: () => import('./features/tools/tools.component').then(m => m.ToolsComponent)
   },
   { path: 'tools', redirectTo: '', pathMatch: 'full' },
+  // El Estudio: un solo espacio de trabajo con las operaciones encadenadas.
+  // Las rutas por herramienta siguen vivas (enlaces guardados, manual de usuario).
+  {
+    path: 'estudio',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/estudio/estudio.component').then(m => m.EstudioComponent)
+  },
   {
     path: 'editor',
     canActivate: [authGuard],

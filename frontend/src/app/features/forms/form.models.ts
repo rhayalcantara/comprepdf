@@ -70,18 +70,11 @@ export function readImageAsDataUrl(file: File, maxPx: number): Promise<string> {
   });
 }
 
-/** crypto.randomUUID solo existe en contextos seguros (HTTPS/localhost); QA se sirve por HTTP. */
-export function newId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  bytes[6] = (bytes[6] & 0x0f) | 0x40;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-}
+// El generador vive en shared/ porque el Estudio necesita exactamente el mismo
+// fallback de contexto inseguro. Se reexporta para no tocar quien lo importa
+// desde aquí, y se importa además para usarlo en este archivo.
+import { newId } from '../../shared/uuid';
+export { newId };
 
 /** Tipos de pregunta con su etiqueta en español para el selector del editor. */
 export const QUESTION_TYPES: { value: FormQuestionType; label: string }[] = [
